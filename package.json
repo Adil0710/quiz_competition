@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "NEXT_DISABLE_TYPECHECK=true next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed": "node scripts/seed-data.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -36,6 +37,7 @@
     "cloudinary": "^2.7.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.539.0",
     "mongoose": "^8.17.1",

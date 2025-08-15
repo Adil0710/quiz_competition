@@ -16,12 +16,12 @@ import Link from 'next/link';
 interface Team {
   _id: string;
   name: string;
-  college: {
+  college?: {
     _id: string;
     name: string;
     code: string;
   };
-  members: any[];
+  members?: any[];
 }
 
 export default function CreateCompetitionPage() {
@@ -211,7 +211,6 @@ export default function CreateCompetitionPage() {
                     className={`cursor-pointer transition-colors ${
                       selectedTeams.includes(team._id) ? 'ring-2 ring-primary' : ''
                     }`}
-                    onClick={() => handleTeamToggle(team._id)}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
@@ -219,14 +218,14 @@ export default function CreateCompetitionPage() {
                           <div className="flex items-center gap-2">
                             <Checkbox
                               checked={selectedTeams.includes(team._id)}
-                              onClick={(e) => e.stopPropagation()}
+                              onCheckedChange={() => handleTeamToggle(team._id)}
                             />
                             <h3 className="font-semibold">{team.name}</h3>
                           </div>
-                          <Badge variant="secondary">{team.college.code}</Badge>
-                          <p className="text-sm text-muted-foreground">{team.college.name}</p>
+                          <Badge variant="secondary">{team.college?.code ?? 'N/A'}</Badge>
+                          <p className="text-sm text-muted-foreground">{team.college?.name ?? 'Unknown college'}</p>
                           <p className="text-xs text-muted-foreground">
-                            {team.members.length} members
+                            {(team.members?.length ?? 0)} members
                           </p>
                         </div>
                       </div>

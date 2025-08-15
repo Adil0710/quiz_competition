@@ -91,12 +91,20 @@ export default function ManageCompetitionPage() {
 
   const fetchQuestions = async (type: string, count: number = 6) => {
     try {
-      const response = await fetch(`/api/questions?type=${type}&unused=true`);
+      // Use competition-scoped endpoint to prevent repeats within this competition
+      const response = await fetch(`/api/competitions/${competitionId}/questions?type=${type}&count=${count}`);
       const data = await response.json();
       if (data.success) {
-        const questions = data.data.slice(0, count);
+        const questions = (data.data || []).slice(0, count);
         setCurrentQuestions(questions);
         setCurrentQuestionIndex(0);
+        if (!questions.length) {
+          toast({
+            title: "No questions available",
+            description: "No unused questions of this type remain for this competition.",
+            variant: "destructive"
+          });
+        }
       }
     } catch (error) {
       toast({
