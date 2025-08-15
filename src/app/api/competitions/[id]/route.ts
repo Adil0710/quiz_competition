@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> } // Correct type definition
 ): Promise<NextResponse> {
   try {
     const { id } = await params;
@@ -55,10 +55,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+ { params }: { params: Promise<{ id: string }> } // Correct type definition
 ): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = await params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
