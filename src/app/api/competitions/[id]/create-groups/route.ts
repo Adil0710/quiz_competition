@@ -7,13 +7,13 @@ import mongoose from 'mongoose';
 
 export async function POST(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+  { params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid competition ID' },
         { status: 400 }
@@ -23,7 +23,7 @@ request: Request,
     const body = await request.json();
     const { mode, customGroups } = body; // mode: 'auto' or 'manual'
 
-    const competition = await Competition.findById(params.id).populate('teams');
+    const competition = await Competition.findById(id).populate('teams');
     if (!competition) {
       return NextResponse.json(
         { success: false, error: 'Competition not found' },
@@ -39,7 +39,7 @@ request: Request,
     }
 
     // Delete existing groups if any
-    await Group.deleteMany({ competition: params.id });
+    await Group.deleteMany({ competition: id });
 
     let groups;
     if (mode === 'auto') {
@@ -53,7 +53,7 @@ request: Request,
           name: `Group ${String.fromCharCode(65 + i)}`, // A, B, C, D, E, F
           stage: 'group',
           teams: groupTeams.map((team: any) => team._id),
-          competition: params.id,
+          competition: id,
           maxRounds: 3
         });
         groups.push(group);
@@ -80,7 +80,7 @@ request: Request,
           name: groupData.name || `Group ${String.fromCharCode(65 + i)}`,
           stage: 'group',
           teams: groupData.teams,
-          competition: params.id,
+          competition: id,
           maxRounds: 3
         });
         groups.push(group);
@@ -99,12 +99,12 @@ request: Request,
     }
 
     // Update competition with groups
-    await Competition.findByIdAndUpdate(params.id, {
+    await Competition.findByIdAndUpdate(id, {
       groups: groups.map(group => group._id),
       status: 'ongoing'
     });
 
-    const populatedGroups = await Group.find({ competition: params.id })
+    const populatedGroups = await Group.find({ competition: id })
       .populate({
         path: 'teams',
         populate: {

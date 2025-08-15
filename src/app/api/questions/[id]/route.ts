@@ -6,20 +6,20 @@ import mongoose from 'mongoose';
 
 export async function GET(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+  { params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid question ID' },
         { status: 400 }
       );
     }
 
-    const question = await Question.findById(params.id);
+    const question = await Question.findById(id);
     
     if (!question) {
       return NextResponse.json(
@@ -39,13 +39,13 @@ request: Request,
 
 export async function PUT(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+  { params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid question ID' },
         { status: 400 }
@@ -64,7 +64,7 @@ request: Request,
     const mediaFile = formData.get('mediaFile') as File;
     const mediaType = formData.get('mediaType') as string;
 
-    const existingQuestion = await Question.findById(params.id);
+    const existingQuestion = await Question.findById(id);
     if (!existingQuestion) {
       return NextResponse.json(
         { success: false, error: 'Question not found' },
@@ -110,7 +110,7 @@ request: Request,
     };
 
     const updatedQuestion = await Question.findByIdAndUpdate(
-      params.id,
+      id,
       updateData,
       { new: true, runValidators: true }
     );
@@ -126,20 +126,20 @@ request: Request,
 
 export async function DELETE(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+  { params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid question ID' },
         { status: 400 }
       );
     }
 
-    const question = await Question.findById(params.id);
+    const question = await Question.findById(id);
     if (!question) {
       return NextResponse.json(
         { success: false, error: 'Question not found' },
@@ -157,7 +157,7 @@ request: Request,
       }
     }
 
-    await Question.findByIdAndDelete(params.id);
+    await Question.findByIdAndDelete(id);
     return NextResponse.json({ success: true, message: 'Question deleted successfully' });
   } catch (error) {
     return NextResponse.json(

@@ -5,20 +5,20 @@ import mongoose from 'mongoose';
 
 export async function GET(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+{ params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid competition ID' },
         { status: 400 }
       );
     }
 
-    const competition = await Competition.findById(params.id)
+    const competition = await Competition.findById(id)
       .populate({
         path: 'teams',
         populate: {
@@ -55,13 +55,13 @@ request: Request,
 
 export async function PUT(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+{ params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid competition ID' },
         { status: 400 }
@@ -72,7 +72,7 @@ request: Request,
     const { name, description, status, currentStage, endDate } = body;
 
     const competition = await Competition.findByIdAndUpdate(
-      params.id,
+      id,
       { name, description, status, currentStage, endDate },
       { new: true, runValidators: true }
     ).populate({

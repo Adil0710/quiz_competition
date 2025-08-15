@@ -6,20 +6,20 @@ import mongoose from 'mongoose';
 
 export async function GET(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+{ params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid team ID' },
         { status: 400 }
       );
     }
 
-    const team = await Team.findById(params.id)
+    const team = await Team.findById(id)
       .populate('college', 'name code')
       .populate('groupId', 'name stage');
     
@@ -41,13 +41,13 @@ request: Request,
 
 export async function PUT(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+{ params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid team ID' },
         { status: 400 }
@@ -80,7 +80,7 @@ request: Request,
     }
 
     const team = await Team.findByIdAndUpdate(
-      params.id,
+      id,
       { name, college, members, totalScore, currentStage },
       { new: true, runValidators: true }
     ).populate('college', 'name code').populate('groupId', 'name stage');
@@ -103,20 +103,20 @@ request: Request,
 
 export async function DELETE(
 request: Request,
-  { params }: { params: { id: string } }
-) {
+{ params }: { params: Promise<{ id: string }> } // Correct type definition
+): Promise<NextResponse> {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid team ID' },
         { status: 400 }
       );
     }
 
-    const team = await Team.findByIdAndDelete(params.id);
+    const team = await Team.findByIdAndDelete(id);
 
     if (!team) {
       return NextResponse.json(
