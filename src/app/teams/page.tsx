@@ -21,16 +21,16 @@ interface College {
 interface Team {
   _id: string;
   name: string;
-  college: College;
-  members: {
+  college?: College | null;
+  members?: {
     name: string;
     email: string;
     phone: string;
     role: 'captain' | 'member';
   }[];
-  totalScore: number;
-  currentStage: string;
-  createdAt: string;
+  totalScore?: number;
+  currentStage?: string;
+  createdAt?: string;
 }
 
 export default function TeamsPage() {
@@ -58,11 +58,16 @@ export default function TeamsPage() {
   }, []);
 
   useEffect(() => {
-    const filtered = teams.filter(team =>
-      team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      team.college.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      team.college.code.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const term = searchTerm.toLowerCase();
+    const filtered = teams.filter(team => {
+      const collegeName = team.college?.name?.toLowerCase() || '';
+      const collegeCode = team.college?.code?.toLowerCase() || '';
+      return (
+        team.name.toLowerCase().includes(term) ||
+        collegeName.includes(term) ||
+        collegeCode.includes(term)
+      );
+    });
     setFilteredTeams(filtered);
   }, [teams, searchTerm]);
 
@@ -171,10 +176,10 @@ export default function TeamsPage() {
     setEditingTeam(team);
     setFormData({
       name: team.name,
-      college: team.college._id,
+      college: team.college?._id || '',
       members: [
-        ...team.members,
-        ...Array(Math.max(0, 3 - team.members.length)).fill({ name: '', email: '', phone: '', role: 'member' })
+        ...(team.members || []),
+        ...Array(Math.max(0, 3 - (team.members?.length || 0))).fill({ name: '', email: '', phone: '', role: 'member' })
       ].slice(0, 3)
     });
     setIsDialogOpen(true);
@@ -394,18 +399,18 @@ export default function TeamsPage() {
                     <TableCell className="font-medium">{team.name}</TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{team.college.name}</div>
-                        <Badge variant="secondary">{team.college.code}</Badge>
+                        <div className="font-medium">{team.college?.name ?? 'Unknown college'}</div>
+                        <Badge variant="secondary">{team.college?.code ?? 'N/A'}</Badge>
                       </div>
                     </TableCell>
-                    <TableCell>{team.members.length}</TableCell>
+                    <TableCell>{team.members?.length ?? 0}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {team.currentStage.replace('_', ' ')}
+                        {(team.currentStage || 'group').replace('_', ' ')}
                       </Badge>
                     </TableCell>
-                    <TableCell>{team.totalScore}</TableCell>
-                    <TableCell>{new Date(team.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>{team.totalScore ?? 0}</TableCell>
+                    <TableCell>{team.createdAt ? new Date(team.createdAt).toLocaleDateString() : '-'}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button
