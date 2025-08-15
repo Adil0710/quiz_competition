@@ -8,8 +8,23 @@ export async function GET() {
   try {
     await dbConnect();
     const competitions = await Competition.find({})
-      .populate('teams', 'name college')
-      .populate('groups', 'name stage teams')
+      .populate({
+        path: 'teams',
+        select: 'name college members totalScore currentStage',
+        populate: {
+          path: 'college',
+          select: 'name code'
+        }
+      })
+      .populate({
+        path: 'groups',
+        select: 'name stage teams',
+        populate: {
+          path: 'teams',
+          select: 'name college',
+          populate: { path: 'college', select: 'name code' }
+        }
+      })
       .sort({ createdAt: -1 });
     return NextResponse.json({ success: true, data: competitions });
   } catch (error) {
