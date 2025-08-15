@@ -4,11 +4,11 @@ import Competition from '@/models/Competition';
 import mongoose from 'mongoose';
 
 export async function GET(
-request: Request,
-{ params }: { params: Promise<{ id: string }> } // Correct type definition
+  _request: NextRequest,
+  { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
-     const {id} = await params
+    const { id } = params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -54,11 +54,11 @@ request: Request,
 }
 
 export async function PUT(
-request: Request,
-{ params }: { params: Promise<{ id: string }> } // Correct type definition
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
-     const {id} = await params
+    const { id } = params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
