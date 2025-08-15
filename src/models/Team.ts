@@ -35,14 +35,14 @@ const TeamSchema: Schema = new Schema({
     },
     email: {
       type: String,
-      required: [true, 'Member email is required'],
       trim: true,
-      lowercase: true
+      lowercase: true,
+      default: ''
     },
     phone: {
       type: String,
-      required: [true, 'Member phone is required'],
-      trim: true
+      trim: true,
+      default: ''
     },
     role: {
       type: String,

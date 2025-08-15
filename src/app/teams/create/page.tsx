@@ -55,28 +55,17 @@ export default function CreateTeamPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate members
+    // Filter valid members (only those with at least a name)
     const validMembers = formData.members.filter(member => 
-      member.name.trim() && member.email.trim() && member.phone.trim()
+      member.name.trim()
     );
 
-    if (validMembers.length === 0) {
-      toast({
-        title: "Error",
-        description: "At least one team member is required",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const hasCaptain = validMembers.some(member => member.role === 'captain');
-    if (!hasCaptain) {
-      toast({
-        title: "Error",
-        description: "Team must have at least one captain",
-        variant: "destructive"
-      });
-      return;
+    // Ensure at least one captain exists if members are provided
+    if (validMembers.length > 0) {
+      const hasCaptain = validMembers.some(member => member.role === 'captain');
+      if (!hasCaptain) {
+        validMembers[0].role = 'captain';
+      }
     }
 
     setLoading(true);
@@ -188,7 +177,7 @@ export default function CreateTeamPage() {
         <Card>
           <CardHeader>
             <CardTitle>Team Members</CardTitle>
-            <CardDescription>Add team members (at least one captain required)</CardDescription>
+            <CardDescription>Add team members (optional - can be added later)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {formData.members.map((member, index) => (

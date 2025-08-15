@@ -119,15 +119,11 @@ export default function TeamsPage() {
       return;
     }
 
-    const hasCaptain = validMembers.some(member => member.role === 'captain');
-    if (!hasCaptain) {
-      toast({
-        title: "Error",
-        description: "Team must have at least one captain",
-        variant: "destructive"
-      });
-      setLoading(false);
-      return;
+    if (validMembers.length > 0) {
+      const hasCaptain = validMembers.some(member => member.role === 'captain');
+      if (!hasCaptain) {
+        validMembers[0].role = 'captain';
+      }
     }
 
     try {

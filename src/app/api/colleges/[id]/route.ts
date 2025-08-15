@@ -4,13 +4,12 @@ import College from '@/models/College';
 import mongoose from 'mongoose';
 
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-
-    const {id} = await params
-    await dbConnect();
+    request: NextRequest,
+    { params }: { params: { id: string } }
+  ) {
+    try {
+      const { id } = await params;
+      await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -38,11 +37,11 @@ export async function GET(
 }
 
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-     const {id} = await params
+    const { id } = await params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -98,11 +97,11 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-     const {id} = await params
+    const { id } = await params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {

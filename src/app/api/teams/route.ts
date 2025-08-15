@@ -25,12 +25,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, college, members } = body;
 
-    if (!name || !college || !members || members.length === 0) {
+    if (!name || !college) {
       return NextResponse.json(
-        { success: false, error: 'Team name, college, and members are required' },
+        { success: false, error: 'Team name and college are required' },
         { status: 400 }
       );
     }
+
+    // Initialize members array if not provided
+    const teamMembers = members || [];
 
     // Validate college exists
     const collegeExists = await College.findById(college);
@@ -41,19 +44,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate members structure
-    const hasCaptain = members.some((member: any) => member.role === 'captain');
-    if (!hasCaptain) {
-      return NextResponse.json(
-        { success: false, error: 'Team must have at least one captain' },
-        { status: 400 }
-      );
+    // Ensure at least one captain exists if members are provided
+    if (teamMembers.length > 0) {
+      const hasCaptain = teamMembers.some((member: any) => member.role === 'captain');
+      if (!hasCaptain) {
+        teamMembers[0].role = 'captain'; // Make first member captain if none exists
+      }
     }
 
     const team = await Team.create({
       name,
       college,
-      members
+      members: teamMembers
     });
 
     const populatedTeam = await Team.findById(team._id)
