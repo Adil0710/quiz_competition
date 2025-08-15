@@ -8,7 +8,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ): Promise<NextResponse> {
   try {
-    const { id } = params;
+    const { id } = await params;
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
