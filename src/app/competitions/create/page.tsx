@@ -219,6 +219,7 @@ export default function CreateCompetitionPage() {
                           <div className="flex items-center gap-2">
                             <Checkbox
                               checked={selectedTeams.includes(team._id)}
+                              onClick={(e) => e.stopPropagation()}
                             />
                             <h3 className="font-semibold">{team.name}</h3>
                           </div>
