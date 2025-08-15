@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Competition from '@/models/Competition';
 import mongoose from 'mongoose';
+import Group from '@/models/Group';
+
+// Ensure the Group model is registered (prevent tree-shaking of unused import)
+void Group;
 
 export async function GET(
   request: NextRequest,
@@ -46,6 +50,7 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: competition });
   } catch (error) {
+    console.log(error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch competition' },
       { status: 500 }
