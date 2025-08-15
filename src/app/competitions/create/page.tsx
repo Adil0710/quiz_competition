@@ -56,6 +56,35 @@ export default function CreateCompetitionPage() {
     }
   };
 
+  const bulkCreateTeams = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/teams/bulk-from-colleges', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: 'Teams created',
+          description: `${data.created} team(s) created from colleges`
+        });
+        await fetchTeams();
+      } else {
+        toast({
+          title: 'Error',
+          description: data.error || 'Failed to bulk create teams',
+          variant: 'destructive'
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: 'Failed to bulk create teams',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTeamToggle = (teamId: string) => {
     setSelectedTeams(prev => {
       if (prev.includes(teamId)) {
@@ -126,16 +155,26 @@ export default function CreateCompetitionPage() {
   return (
     <div className="container mx-auto p-6 space-y-8">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/dashboard">
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
+      <div className="flex items-center gap-4 justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold">Create New Competition</h1>
+            <p className="text-muted-foreground">Set up a new quiz competition with 18 teams</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/teams">
+            <Button variant="outline" size="sm">Go to Teams</Button>
+          </Link>
+          <Button size="sm" onClick={bulkCreateTeams} disabled={loading}>
+            {loading ? 'Working...' : 'Bulk create teams from colleges'}
           </Button>
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold">Create New Competition</h1>
-          <p className="text-muted-foreground">Set up a new quiz competition with 18 teams</p>
         </div>
       </div>
 

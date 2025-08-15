@@ -109,20 +109,10 @@ export default function TeamsPage() {
     e.preventDefault();
     setLoading(true);
 
-    // Validate members
+    // Members are optional; filter only fully filled entries
     const validMembers = formData.members.filter(member => 
       member.name.trim() && member.email.trim() && member.phone.trim()
     );
-
-    if (validMembers.length === 0) {
-      toast({
-        title: "Error",
-        description: "At least one team member is required",
-        variant: "destructive"
-      });
-      setLoading(false);
-      return;
-    }
 
     if (validMembers.length > 0) {
       const hasCaptain = validMembers.some(member => member.role === 'captain');
@@ -140,7 +130,7 @@ export default function TeamsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          members: validMembers
+          members: validMembers // can be empty
         })
       });
 
