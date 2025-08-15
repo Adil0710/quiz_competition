@@ -6,7 +6,7 @@ import Team from '@/models/Team';
 import mongoose from 'mongoose';
 
 export async function POST(
-  request: NextRequest,
+request: Request,
   { params }: { params: { id: string } }
 ) {
   try {

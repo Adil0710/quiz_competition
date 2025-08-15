@@ -4,7 +4,7 @@ import Competition from '@/models/Competition';
 import mongoose from 'mongoose';
 
 export async function GET(
-  request: NextRequest,
+request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -54,7 +54,7 @@ export async function GET(
 }
 
 export async function PUT(
-  request: NextRequest,
+request: Request,
   { params }: { params: { id: string } }
 ) {
   try {

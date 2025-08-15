@@ -4,7 +4,7 @@ import College from '@/models/College';
 import mongoose from 'mongoose';
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -12,14 +12,14 @@ export async function GET(
     const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid college ID' },
         { status: 400 }
       );
     }
 
-    const college = await College.findById(params.id);
+    const college = await College.findById(id);
     
     if (!college) {
       return NextResponse.json(
@@ -38,14 +38,14 @@ export async function GET(
 }
 
 export async function PUT(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid college ID' },
         { status: 400 }
@@ -57,7 +57,7 @@ export async function PUT(
 
     const existingCollege = await College.findOne({
       $and: [
-        { _id: { $ne: params.id } },
+        { _id: { $ne: id } },
         { $or: [{ name }, { code }] }
       ]
     });
@@ -70,7 +70,7 @@ export async function PUT(
     }
 
     const college = await College.findByIdAndUpdate(
-      params.id,
+      id,
       {
         name,
         code: code?.toUpperCase(),
@@ -98,21 +98,21 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
      const {id} = await params
     await dbConnect();
     
-    if (!mongoose.Types.ObjectId.isValid(params.id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid college ID' },
         { status: 400 }
       );
     }
 
-    const college = await College.findByIdAndDelete(params.id);
+    const college = await College.findByIdAndDelete(id);
 
     if (!college) {
       return NextResponse.json(
