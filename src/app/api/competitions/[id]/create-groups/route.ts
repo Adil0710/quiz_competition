@@ -10,6 +10,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+     const {id} = await params
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(params.id)) {

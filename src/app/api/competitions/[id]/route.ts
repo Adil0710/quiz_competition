@@ -8,6 +8,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+     const {id} = await params
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
@@ -57,6 +58,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+     const {id} = await params
     await dbConnect();
     
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
