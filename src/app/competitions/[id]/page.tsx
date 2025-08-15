@@ -1,0 +1,342 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ArrowLeft, Users, Play, Trophy, Settings } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+interface Competition {
+  _id: string;
+  name: string;
+  description: string;
+  status: 'draft' | 'ongoing' | 'completed';
+  currentStage: 'group' | 'semi_final' | 'final';
+  teams: any[];
+  groups: any[];
+  startDate: string;
+  endDate?: string;
+}
+
+export default function CompetitionDetailsPage() {
+  const [competition, setCompetition] = useState<Competition | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  const params = useParams();
+  const router = useRouter();
+  const competitionId = params.id as string;
+
+  useEffect(() => {
+    if (competitionId) {
+      fetchCompetition();
+    }
+  }, [competitionId]);
+
+  const fetchCompetition = async () => {
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setCompetition(data.data);
+      } else {
+        toast({
+          title: "Error",
+          description: "Competition not found",
+          variant: "destructive"
+        });
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch competition details",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateGroups = async (mode: 'auto' | 'manual') => {
+    try {
+      const response = await fetch(`/api/competitions/${competitionId}/create-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: "Groups created successfully"
+        });
+        fetchCompetition();
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to create groups",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create groups",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'draft': return 'bg-gray-500';
+      case 'ongoing': return 'bg-green-500';
+      case 'completed': return 'bg-blue-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getStageColor = (stage: string) => {
+    switch (stage) {
+      case 'group': return 'bg-yellow-500';
+      case 'semi_final': return 'bg-orange-500';
+      case 'final': return 'bg-red-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Loading competition...</div>
+      </div>
+    );
+  }
+
+  if (!competition) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg">Competition not found</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Button>
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold">{competition.name}</h1>
+              <Badge className={getStatusColor(competition.status)}>
+                {competition.status}
+              </Badge>
+              {competition.status === 'ongoing' && (
+                <Badge className={getStageColor(competition.currentStage)}>
+                  {competition.currentStage.replace('_', ' ')}
+                </Badge>
+              )}
+            </div>
+            <p className="text-muted-foreground">{competition.description}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {competition.status === 'draft' && competition.teams.length === 18 && (
+            <>
+              <Button variant="outline" onClick={() => handleCreateGroups('auto')}>
+                Auto Create Groups
+              </Button>
+              <Button variant="outline" onClick={() => handleCreateGroups('manual')}>
+                Manual Groups
+              </Button>
+            </>
+          )}
+          {competition.status === 'ongoing' && (
+            <Link href={`/competitions/${competitionId}/manage`}>
+              <Button>
+                <Play className="mr-2 h-4 w-4" />
+                Manage Competition
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Competition Info */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Teams</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{competition.teams.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Groups Created</CardTitle>
+            <Trophy className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{competition.groups.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Current Stage</CardTitle>
+            <Play className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{competition.currentStage.replace('_', ' ')}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Start Date</CardTitle>
+            <Settings className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm font-bold">
+              {new Date(competition.startDate).toLocaleDateString()}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <Tabs defaultValue="teams" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="teams">Teams</TabsTrigger>
+          <TabsTrigger value="groups">Groups</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="teams" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Participating Teams</CardTitle>
+              <CardDescription>All teams registered for this competition</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {competition.teams.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-4 text-lg font-semibold">No teams registered</h3>
+                  <p className="text-muted-foreground">Teams will appear here once registered.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Team Name</TableHead>
+                      <TableHead>College</TableHead>
+                      <TableHead>Members</TableHead>
+                      <TableHead>Current Stage</TableHead>
+                      <TableHead>Total Score</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {competition.teams.map((team: any) => (
+                      <TableRow key={team._id}>
+                        <TableCell className="font-medium">{team.name}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{team.college?.name}</div>
+                            <Badge variant="secondary" className="text-xs">
+                              {team.college?.code}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>{team.members?.length || 0}</TableCell>
+                        <TableCell>
+                          <Badge className={getStageColor(team.currentStage || 'group')}>
+                            {(team.currentStage || 'group').replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{team.totalScore || 0}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="groups" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Competition Groups</CardTitle>
+              <CardDescription>Groups created for different stages</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {competition.groups.length === 0 ? (
+                <div className="text-center py-8">
+                  <Trophy className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <h3 className="mt-4 text-lg font-semibold">No groups created</h3>
+                  <p className="text-muted-foreground">
+                    Create groups to start the competition.
+                  </p>
+                  {competition.status === 'draft' && competition.teams.length === 18 && (
+                    <div className="flex gap-2 justify-center mt-4">
+                      <Button onClick={() => handleCreateGroups('auto')}>
+                        Auto Create Groups
+                      </Button>
+                      <Button variant="outline" onClick={() => handleCreateGroups('manual')}>
+                        Manual Groups
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {competition.groups.map((group: any) => (
+                    <Card key={group._id}>
+                      <CardHeader>
+                        <CardTitle className="flex items-center justify-between">
+                          {group.name}
+                          <Badge className={getStageColor(group.stage)}>
+                            {group.stage.replace('_', ' ')}
+                          </Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {group.teams?.map((team: any) => (
+                            <div key={team._id} className="flex justify-between items-center p-2 bg-muted rounded">
+                              <span className="font-medium">{team.name}</span>
+                              <Badge variant="outline">{team.college?.code}</Badge>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 text-sm text-muted-foreground">
+                          Round {group.currentRound || 1} of {group.maxRounds || 3}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
