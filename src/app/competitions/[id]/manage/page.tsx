@@ -1,15 +1,37 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Play, Pause, SkipForward, Trophy, Users, Clock, Check, X } from 'lucide-react';
-import { useToast } from '@/components/ui/use-toast';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect, useRef } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowLeft,
+  Play,
+  Pause,
+  SkipForward,
+  Trophy,
+  Users,
+  Clock,
+  Check,
+  X,
+} from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,12 +42,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 
 interface Question {
   _id: string;
   question: string;
-  type: 'mcq' | 'media' | 'rapid_fire';
+  type: "mcq" | "media" | "rapid_fire";
   options?: string[];
   correctAnswer?: string | number;
   mediaUrl?: string;
@@ -54,8 +76,10 @@ export default function ManageCompetitionPage() {
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [roundType, setRoundType] = useState<'mcq' | 'media' | 'rapid_fire'>('mcq');
-  const [teamScores, setTeamScores] = useState<{[key: string]: number}>({});
+  const [roundType, setRoundType] = useState<"mcq" | "media" | "rapid_fire">(
+    "mcq"
+  );
+  const [teamScores, setTeamScores] = useState<{ [key: string]: number }>({});
   const [loading, setLoading] = useState(true);
   const [isRoundActive, setIsRoundActive] = useState(false);
   // Timed reveal state
@@ -69,8 +93,10 @@ export default function ManageCompetitionPage() {
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isOptionCorrect, setIsOptionCorrect] = useState<boolean | null>(null);
   const [awardedTeamId, setAwardedTeamId] = useState<string | null>(null);
-  const [noQuestionsForType, setNoQuestionsForType] = useState<'mcq' | 'media' | 'rapid_fire' | null>(null);
-  
+  const [noQuestionsForType, setNoQuestionsForType] = useState<
+    "mcq" | "media" | "rapid_fire" | null
+  >(null);
+
   const { toast } = useToast();
   const params = useParams();
   const router = useRouter();
@@ -90,14 +116,17 @@ export default function ManageCompetitionPage() {
         setCompetition(data.data);
         if (data.data.groups.length > 0) {
           setCurrentGroup(data.data.groups[0]);
-          initializeTeamScores(data.data.groups[0].teams, data.data.teamScores || []);
+          initializeTeamScores(
+            data.data.groups[0].teams,
+            data.data.teamScores || []
+          );
         }
       }
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to fetch competition",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -110,11 +139,11 @@ export default function ManageCompetitionPage() {
     const chosen = currentQuestion.options?.[index];
     const ans = currentQuestion.correctAnswer;
     let correct = false;
-    if (typeof ans === 'number') {
+    if (typeof ans === "number") {
       correct = index === ans;
-    } else if (typeof ans === 'string') {
+    } else if (typeof ans === "string") {
       const a = ans.trim().toLowerCase();
-      const b = (chosen || '').trim().toLowerCase();
+      const b = (chosen || "").trim().toLowerCase();
       correct = a === b;
     }
     setIsOptionCorrect(!!correct);
@@ -127,41 +156,57 @@ export default function ManageCompetitionPage() {
     const pts = isOptionCorrect ? currentQuestion.points : 0;
     const newTotal = (teamScores[teamId] || 0) + pts;
     if (pts > 0) {
-      setTeamScores(prev => ({ ...prev, [teamId]: newTotal }));
-      toast({ title: 'Points Awarded', description: `+${pts} to selected team` });
+      setTeamScores((prev) => ({ ...prev, [teamId]: newTotal }));
+      toast({
+        title: "Points Awarded",
+        description: `+${pts} to selected team`,
+      });
     } else {
-      toast({ title: 'Incorrect', description: '0 points awarded' });
+      toast({ title: "Incorrect", description: "0 points awarded" });
     }
     setAwardedTeamId(teamId);
 
     // Persist to competition-scoped scores
     try {
       await fetch(`/api/competitions/${competitionId}/scores`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, delta: pts })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, delta: pts }),
       });
     } catch (e) {
-      toast({ title: 'Warning', description: 'Failed to persist competition score immediately. It will remain in the UI.', variant: 'destructive' });
+      toast({
+        title: "Warning",
+        description:
+          "Failed to persist competition score immediately. It will remain in the UI.",
+        variant: "destructive",
+      });
     }
   };
 
-  const initializeTeamScores = (teams: Team[], compTeamScores: { team: string; score: number }[] = []) => {
+  const initializeTeamScores = (
+    teams: Team[],
+    compTeamScores: { team: string; score: number }[] = []
+  ) => {
     const map: Record<string, number> = {};
     for (const ts of compTeamScores) {
       map[String(ts.team)] = ts.score || 0;
     }
-    const scores: {[key: string]: number} = {};
-    teams.forEach(team => {
+    const scores: { [key: string]: number } = {};
+    teams.forEach((team) => {
       scores[team._id] = map[team._id] ?? 0;
     });
     setTeamScores(scores);
   };
 
-  const fetchQuestions = async (type: string, count: number = 6): Promise<number> => {
+  const fetchQuestions = async (
+    type: string,
+    count: number = 6
+  ): Promise<number> => {
     try {
       // Use competition-scoped endpoint to prevent repeats within this competition
-      const response = await fetch(`/api/competitions/${competitionId}/questions?type=${type}&count=${count}`);
+      const response = await fetch(
+        `/api/competitions/${competitionId}/questions?type=${type}&count=${count}`
+      );
       const data = await response.json();
       if (data.success) {
         const questions = (data.data || []).slice(0, count);
@@ -170,10 +215,11 @@ export default function ManageCompetitionPage() {
         if (!questions.length) {
           toast({
             title: "No questions available",
-            description: "No unused questions of this type remain for this competition.",
-            variant: "destructive"
+            description:
+              "No unused questions of this type remain for this competition.",
+            variant: "destructive",
           });
-          setNoQuestionsForType(type as 'mcq' | 'media' | 'rapid_fire');
+          setNoQuestionsForType(type as "mcq" | "media" | "rapid_fire");
         } else {
           setNoQuestionsForType(null);
         }
@@ -183,13 +229,13 @@ export default function ManageCompetitionPage() {
       toast({
         title: "Error",
         description: "Failed to fetch questions",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
     return 0;
   };
 
-  const startRound = async (type: 'mcq' | 'media' | 'rapid_fire') => {
+  const startRound = async (type: "mcq" | "media" | "rapid_fire") => {
     setRoundType(type);
     const count = await fetchQuestions(type);
     const hasQuestions = count > 0;
@@ -197,23 +243,23 @@ export default function ManageCompetitionPage() {
     if (hasQuestions) {
       toast({
         title: "Round Started",
-        description: `${type.toUpperCase()} round has begun`
+        description: `${type.toUpperCase()} round has begun`,
       });
     }
   };
 
-  const resetUsage = async (type: 'mcq' | 'media' | 'rapid_fire') => {
+  const resetUsage = async (type: "mcq" | "media" | "rapid_fire") => {
     try {
       const res = await fetch(`/api/competitions/${competitionId}/questions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
       });
       const data = await res.json();
       if (data.success) {
         toast({
-          title: 'Usage reset',
-          description: `Cleared ${type.toUpperCase()} usage for this competition.`
+          title: "Usage reset",
+          description: `Cleared ${type.toUpperCase()} usage for this competition.`,
         });
         // If current round matches, refetch questions and update state
         if (roundType === type) {
@@ -222,10 +268,18 @@ export default function ManageCompetitionPage() {
         }
         setNoQuestionsForType(null);
       } else {
-        toast({ title: 'Failed', description: data.error || 'Could not reset usage', variant: 'destructive' });
+        toast({
+          title: "Failed",
+          description: data.error || "Could not reset usage",
+          variant: "destructive",
+        });
       }
     } catch (e) {
-      toast({ title: 'Error', description: 'Failed to reset usage', variant: 'destructive' });
+      toast({
+        title: "Error",
+        description: "Failed to reset usage",
+        variant: "destructive",
+      });
     }
   };
 
@@ -274,8 +328,8 @@ export default function ManageCompetitionPage() {
       const isFs = !!document.fullscreenElement;
       setPresenting(isFs);
     };
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
   const enterPresentation = async () => {
@@ -294,7 +348,7 @@ export default function ManageCompetitionPage() {
 
   const nextQuestion = () => {
     if (currentQuestionIndex < currentQuestions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
+      setCurrentQuestionIndex((prev) => prev + 1);
       // reset per-question state
       setSelectedOption(null);
       setIsOptionCorrect(null);
@@ -313,18 +367,18 @@ export default function ManageCompetitionPage() {
     setAwardedTeamId(null);
     toast({
       title: "Round Completed",
-      description: "Round has ended. Review scores and proceed to next round."
+      description: "Round has ended. Review scores and proceed to next round.",
     });
   };
 
   const awardPoints = (teamId: string, points: number) => {
-    setTeamScores(prev => ({
+    setTeamScores((prev) => ({
       ...prev,
-      [teamId]: (prev[teamId] || 0) + points
+      [teamId]: (prev[teamId] || 0) + points,
     }));
     toast({
       title: "Points Awarded",
-      description: `${points} points awarded to team`
+      description: `${points} points awarded to team`,
     });
   };
 
@@ -333,37 +387,40 @@ export default function ManageCompetitionPage() {
 
     // Get winning teams (top teams from current stage)
     const sortedTeams = currentGroup.teams
-      .map(team => ({ ...team, score: teamScores[team._id] || 0 }))
+      .map((team) => ({ ...team, score: teamScores[team._id] || 0 }))
       .sort((a, b) => b.score - a.score);
 
     let winningTeams: string[] = [];
-    let nextStage = '';
+    let nextStage = "";
 
-    if (currentGroup.stage === 'group') {
+    if (currentGroup.stage === "group") {
       // From group stage, take top 1 team per group
       winningTeams = [sortedTeams[0]._id];
-      nextStage = 'semi_final';
-    } else if (currentGroup.stage === 'semi_final') {
+      nextStage = "semi_final";
+    } else if (currentGroup.stage === "semi_final") {
       // From semi-final, take top 1 team per group
       winningTeams = [sortedTeams[0]._id];
-      nextStage = 'final';
+      nextStage = "final";
     }
 
     try {
-      const response = await fetch(`/api/competitions/${competitionId}/advance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stage: nextStage,
-          winningTeams
-        })
-      });
+      const response = await fetch(
+        `/api/competitions/${competitionId}/advance`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stage: nextStage,
+            winningTeams,
+          }),
+        }
+      );
 
       const data = await response.json();
       if (data.success) {
         toast({
           title: "Success",
-          description: `Teams advanced to ${nextStage.replace('_', ' ')} stage`
+          description: `Teams advanced to ${nextStage.replace("_", " ")} stage`,
         });
         fetchCompetition();
       }
@@ -371,7 +428,7 @@ export default function ManageCompetitionPage() {
       toast({
         title: "Error",
         description: "Failed to advance teams",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -415,19 +472,21 @@ export default function ManageCompetitionPage() {
                 Round Control
               </CardTitle>
               <CardDescription>
-                Current Group: {currentGroup?.name} | Round {currentGroup?.currentRound || 1} of {currentGroup?.maxRounds || 3}
+                Current Group: {currentGroup?.name} | Round{" "}
+                {currentGroup?.currentRound || 1} of{" "}
+                {currentGroup?.maxRounds || 3}
               </CardDescription>
             </CardHeader>
             <CardContent>
               {!isRoundActive ? (
                 <div className="flex flex-wrap gap-4">
-                  <Button onClick={() => startRound('mcq')}>
+                  <Button onClick={() => startRound("mcq")}>
                     Start MCQ Round
                   </Button>
-                  <Button onClick={() => startRound('media')}>
+                  <Button onClick={() => startRound("media")}>
                     Start Media Round
                   </Button>
-                  <Button onClick={() => startRound('rapid_fire')}>
+                  <Button onClick={() => startRound("rapid_fire")}>
                     Start Rapid Fire
                   </Button>
                 </div>
@@ -440,14 +499,31 @@ export default function ManageCompetitionPage() {
                     End Round
                   </Button>
                   <div className="ml-auto flex items-center gap-2">
-                    <Button onClick={() => revealForSeconds(15)} disabled={!currentQuestion}>
-                      {isVisible ? `Showing (${countdown}s)` : 'Show for 15s'}
+                    <Button
+                      onClick={() => revealForSeconds(15)}
+                      disabled={!currentQuestion}
+                    >
+                      {isVisible ? `Showing (${countdown}s)` : "Show for 15s"}
                     </Button>
-                    <Button variant="outline" onClick={hideNow} disabled={!isVisible}>Hide Now</Button>
+                    <Button
+                      variant="outline"
+                      onClick={hideNow}
+                      disabled={!isVisible}
+                    >
+                      Hide Now
+                    </Button>
                     {!presenting ? (
-                      <Button variant="secondary" onClick={enterPresentation} disabled={!currentQuestion}>Presentation Mode</Button>
+                      <Button
+                        variant="secondary"
+                        onClick={enterPresentation}
+                        disabled={!currentQuestion}
+                      >
+                        Presentation Mode
+                      </Button>
                     ) : (
-                      <Button variant="destructive" onClick={exitPresentation}>Exit Presentation</Button>
+                      <Button variant="destructive" onClick={exitPresentation}>
+                        Exit Presentation
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -459,26 +535,36 @@ export default function ManageCompetitionPage() {
           {!isRoundActive && noQuestionsForType && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">No questions available</CardTitle>
-                <CardDescription>No unused questions of this type remain for this competition.</CardDescription>
+                <CardTitle className="text-base">
+                  No questions available
+                </CardTitle>
+                <CardDescription>
+                  No unused questions of this type remain for this competition.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="destructive">
-                      Reset {noQuestionsForType.replace('_', ' ')} usage now
+                      Reset {noQuestionsForType.replace("_", " ")} usage now
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Reset question usage?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will clear the used flags for the {noQuestionsForType.replace('_', ' ')} round in this competition so they can be selected again.
+                        This will clear the used flags for the{" "}
+                        {noQuestionsForType.replace("_", " ")} round in this
+                        competition so they can be selected again.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => resetUsage(noQuestionsForType)}>Reset</AlertDialogAction>
+                      <AlertDialogAction
+                        onClick={() => resetUsage(noQuestionsForType)}
+                      >
+                        Reset
+                      </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -488,44 +574,117 @@ export default function ManageCompetitionPage() {
 
           {/* Current Question */}
           {isRoundActive && currentQuestion && (
-            <Card ref={presentRef} className={presenting ? 'fixed inset-0 z-50 bg-black text-white overflow-auto' : ''}>
+            <Card
+              ref={presentRef}
+              className={
+                presenting
+                  ? "fixed inset-0 z-50 bg-black text-white overflow-auto"
+                  : ""
+              }
+            >
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span className={presenting ? 'text-2xl' : ''}>Question {currentQuestionIndex + 1} of {currentQuestions.length}</span>
+                  <span className={presenting ? "text-2xl" : ""}>
+                    Question {currentQuestionIndex + 1} of{" "}
+                    {currentQuestions.length}
+                  </span>
                   <div className="flex items-center gap-3">
                     {isVisible && (
-                      <span className={presenting ? 'text-xl font-semibold' : 'text-sm font-semibold'}>Time left: {countdown}s</span>
+                      <span
+                        className={
+                          presenting
+                            ? "text-xl font-semibold"
+                            : "text-sm font-semibold"
+                        }
+                      >
+                        Time left: {countdown}s
+                      </span>
                     )}
                     <Badge>{roundType.toUpperCase()}</Badge>
                   </div>
                 </CardTitle>
                 {presenting && (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button onClick={() => revealForSeconds(15)} disabled={!currentQuestion}>Show for 15s</Button>
-                    <Button variant="outline" onClick={hideNow} disabled={!isVisible}>Hide Now</Button>
-                    <Button onClick={nextQuestion} disabled={!currentQuestion}>Next Question</Button>
-                    <Button variant="outline" onClick={endRound}>End Round</Button>
-                    <Button variant="destructive" onClick={exitPresentation}>Exit Presentation</Button>
+                    <Button
+                      onClick={() => revealForSeconds(15)}
+                      disabled={!currentQuestion}
+                    >
+                      Show for 15s
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="text-black dark:text-white"
+                      onClick={hideNow}
+                      disabled={!isVisible}
+                    >
+                      Hide Now
+                    </Button>
+                    <Button onClick={nextQuestion} disabled={!currentQuestion}>
+                      Next Question
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="text-black dark:text-white"
+                      onClick={endRound}
+                    >
+                      End Round
+                    </Button>
+                    <Button variant="destructive" onClick={exitPresentation}>
+                      Exit Presentation
+                    </Button>
                   </div>
                 )}
               </CardHeader>
-              <CardContent className={presenting ? 'space-y-6 max-w-5xl mx-auto p-6' : 'space-y-4'}>
+              <CardContent
+                className={
+                  presenting ? "space-y-6 max-w-5xl mx-auto mt-10 p-6" : "space-y-4"
+                }
+              >
                 {isVisible ? (
                   <>
-                    <div className={presenting ? 'text-3xl font-semibold' : 'text-lg font-medium'}>{currentQuestion.question}</div>
+                    <div
+                      className={
+                        presenting
+                          ? "text-5xl font-semibold"
+                          : "text-lg font-medium"
+                      }
+                    >
+                      {currentQuestion.question}
+                    </div>
 
                     {currentQuestion.mediaUrl && (
-                      <div className={presenting ? 'rounded-lg p-4 bg-neutral-900' : 'border rounded-lg p-4'}>
-                        {currentQuestion.mediaType === 'image' && (
-                          <img src={currentQuestion.mediaUrl} alt="Question media" className={presenting ? 'max-w-full h-auto mx-auto' : 'max-w-full h-auto'} />
+                      <div
+                        className={
+                          presenting
+                            ? "rounded-lg p-4 bg-neutral-900"
+                            : "border rounded-lg p-4"
+                        }
+                      >
+                        {currentQuestion.mediaType === "image" && (
+                          <img
+                            src={currentQuestion.mediaUrl}
+                            alt="Question media"
+                            className={
+                              presenting
+                                ? "max-w-full h-auto mx-auto"
+                                : "max-w-full h-auto"
+                            }
+                          />
                         )}
-                        {currentQuestion.mediaType === 'audio' && (
+                        {currentQuestion.mediaType === "audio" && (
                           <audio controls className="w-full">
                             <source src={currentQuestion.mediaUrl} />
                           </audio>
                         )}
-                        {currentQuestion.mediaType === 'video' && (
-                          <video controls className={presenting ? 'w-full max-h-[70vh] mx-auto' : 'w-full max-h-96'}>
+                        {currentQuestion.mediaType === "video" && (
+                          <video
+                            controls
+                            className={
+                              presenting
+                                ? "w-full max-h-[70vh] mx-auto"
+                                : "w-full max-h-96"
+                            }
+                          >
                             <source src={currentQuestion.mediaUrl} />
                           </video>
                         )}
@@ -533,31 +692,69 @@ export default function ManageCompetitionPage() {
                     )}
 
                     {currentQuestion.options && (
-                      <div className={presenting ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-2 gap-2'}>
+                      <div
+                        className={
+                          presenting
+                            ? "grid grid-cols-2 gap-4 pt-5"
+                            : "grid grid-cols-2 gap-2"
+                        }
+                      >
                         {currentQuestion.options.map((option, index) => {
                           const isSelected = selectedOption === index;
-                          const correctSelected = isSelected && isOptionCorrect === true;
-                          const wrongSelected = isSelected && isOptionCorrect === false;
-                          const base = presenting ? 'p-5 rounded-lg cursor-pointer select-none' : 'p-3 border rounded-lg cursor-pointer select-none';
+                          const correctSelected =
+                            isSelected && isOptionCorrect === true;
+                          const wrongSelected =
+                            isSelected && isOptionCorrect === false;
+                          const base = presenting
+                            ? "p-5 rounded-lg cursor-pointer select-none"
+                            : "p-3 border rounded-lg cursor-pointer select-none";
                           const stateCls = correctSelected
-                            ? ' border-2 border-green-500 ring-2 ring-green-500'
+                            ? " border-2 border-green-500 ring-2 ring-green-500"
                             : wrongSelected
-                            ? ' border-2 border-red-500 ring-2 ring-red-500'
-                            : presenting ? ' bg-neutral-900' : '';
+                            ? " border-2 border-red-500 ring-2 ring-red-500"
+                            : presenting
+                            ? " bg-neutral-900"
+                            : "";
                           return (
                             <div
                               key={index}
                               className={`${base}${stateCls}`}
-                              onClick={() => (isVisible ? handleOptionClick(index) : undefined)}
+                              onClick={() =>
+                                isVisible ? handleOptionClick(index) : undefined
+                              }
                               role="button"
                             >
                               <div className="flex items-center gap-3">
-                                <span className={presenting ? 'font-bold text-2xl' : 'font-medium'}>
+                                <span
+                                  className={
+                                    presenting
+                                      ? "font-bold text-3xl"
+                                      : "font-medium"
+                                  }
+                                >
                                   {String.fromCharCode(65 + index)}.
                                 </span>
-                                <span className={presenting ? 'text-2xl' : ''}>{option}</span>
-                                {correctSelected && <Check className={presenting ? 'text-green-400 h-7 w-7 ml-auto' : 'text-green-600 h-4 w-4 ml-auto'} />}
-                                {wrongSelected && <X className={presenting ? 'text-red-400 h-7 w-7 ml-auto' : 'text-red-600 h-4 w-4 ml-auto'} />}
+                                <span className={presenting ? "text-3xl" : ""}>
+                                  {option}
+                                </span>
+                                {correctSelected && (
+                                  <Check
+                                    className={
+                                      presenting
+                                        ? "text-green-400 h-7 w-7 ml-auto"
+                                        : "text-green-600 h-4 w-4 ml-auto"
+                                    }
+                                  />
+                                )}
+                                {wrongSelected && (
+                                  <X
+                                    className={
+                                      presenting
+                                        ? "text-red-400 h-7 w-7 ml-auto"
+                                        : "text-red-600 h-4 w-4 ml-auto"
+                                    }
+                                  />
+                                )}
                               </div>
                             </div>
                           );
@@ -565,18 +762,51 @@ export default function ManageCompetitionPage() {
                       </div>
                     )}
 
-                    {roundType === 'rapid_fire' && (
+                    {roundType === "rapid_fire" && (
                       <div className="text-center">
-                        <p className={presenting ? 'opacity-70 text-xl' : 'text-muted-foreground'}>Admin will ask the question. Click on team that answers correctly.</p>
+                        <p
+                          className={
+                            presenting
+                              ? "opacity-70 text-xl"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          Admin will ask the question. Click on team that
+                          answers correctly.
+                        </p>
                       </div>
                     )}
 
-                    <div className={presenting ? 'flex justify-between items-center pt-6 border-t border-neutral-800' : 'flex justify-between items-center pt-4 border-t'}>
-                      <span className={presenting ? 'text-xl opacity-80' : 'text-sm text-muted-foreground'}>Points: {currentQuestion.points}</span>
+                    <div
+                      className={
+                        presenting
+                          ? "flex justify-between items-center pt-6 border-t border-neutral-800"
+                          : "flex justify-between items-center pt-4 border-t"
+                      }
+                    >
+                      <span
+                        className={
+                          presenting
+                            ? "text-xl opacity-80"
+                            : "text-sm text-muted-foreground"
+                        }
+                      >
+                        Points: {currentQuestion.points}
+                      </span>
                       {/* Intentionally not showing the answer */}
                       {selectedOption !== null && (
-                        <span className={isOptionCorrect ? (presenting ? 'text-2xl font-semibold text-green-400' : 'text-sm font-medium text-green-600') : (presenting ? 'text-2xl font-semibold text-red-400' : 'text-sm font-medium text-red-600')}>
-                          {isOptionCorrect ? 'Correct' : 'Wrong'}
+                        <span
+                          className={
+                            isOptionCorrect
+                              ? presenting
+                                ? "text-2xl font-semibold text-green-400"
+                                : "text-sm font-medium text-green-600"
+                              : presenting
+                              ? "text-2xl font-semibold text-red-400"
+                              : "text-sm font-medium text-red-600"
+                          }
+                        >
+                          {isOptionCorrect ? "Correct" : "Wrong"}
                         </span>
                       )}
                     </div>
@@ -587,13 +817,27 @@ export default function ManageCompetitionPage() {
                           {currentGroup.teams.map((team) => (
                             <Button
                               key={team._id}
-                              className={`justify-between ${awardedTeamId === team._id ? 'opacity-70' : ''}`}
-                              variant={awardedTeamId === team._id ? 'secondary' : 'default'}
+                              className={`justify-between ${
+                                awardedTeamId === team._id ? "opacity-70" : ""
+                              }`}
+                              variant={
+                                awardedTeamId === team._id
+                                  ? "secondary"
+                                  : "default"
+                              }
                               onClick={() => handleAwardTeam(team._id)}
-                              disabled={selectedOption === null || !!awardedTeamId}
+                              disabled={
+                                selectedOption === null || !!awardedTeamId
+                              }
                             >
-                              <span>{team.name} ({team.college.code})</span>
-                              <span className="font-semibold">{isOptionCorrect ? `+${currentQuestion.points}` : '+0'}</span>
+                              <span>
+                                {team.name} ({team.college.code})
+                              </span>
+                              <span className="font-semibold">
+                                {isOptionCorrect
+                                  ? `+${currentQuestion.points}`
+                                  : "+0"}
+                              </span>
                             </Button>
                           ))}
                         </div>
@@ -601,7 +845,15 @@ export default function ManageCompetitionPage() {
                     )}
                   </>
                 ) : (
-                  <div className={presenting ? 'text-center opacity-70 text-xl' : 'text-center text-muted-foreground'}>Question is hidden. Click "Show for 15s" to reveal.</div>
+                  <div
+                    className={
+                      presenting
+                        ? "text-center opacity-70 text-xl"
+                        : "text-center text-muted-foreground"
+                    }
+                  >
+                    Question is hidden. Click "Show for 15s" to reveal.
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -616,10 +868,12 @@ export default function ManageCompetitionPage() {
               <CardTitle>Select Group</CardTitle>
             </CardHeader>
             <CardContent>
-              <Select 
-                value={currentGroup?._id} 
+              <Select
+                value={currentGroup?._id}
                 onValueChange={(value) => {
-                  const group = competition?.groups.find((g: any) => g._id === value);
+                  const group = competition?.groups.find(
+                    (g: any) => g._id === value
+                  );
                   setCurrentGroup(group);
                   if (group) initializeTeamScores(group.teams);
                 }}
@@ -650,24 +904,43 @@ export default function ManageCompetitionPage() {
               <CardContent className="space-y-3">
                 {currentGroup.teams.map((team) => {
                   const isThisAwarded = awardedTeamId === team._id;
-                  const canAward = isRoundActive && !!currentQuestion && selectedOption !== null && !awardedTeamId;
+                  const canAward =
+                    isRoundActive &&
+                    !!currentQuestion &&
+                    selectedOption !== null &&
+                    !awardedTeamId;
                   return (
-                    <div key={team._id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div
+                      key={team._id}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                    >
                       <div>
                         <div className="font-medium">{team.name}</div>
-                        <div className="text-sm text-muted-foreground">{team.college.code}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {team.college.code}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-lg">{teamScores[team._id] || 0}</span>
+                        <span className="font-bold text-lg">
+                          {teamScores[team._id] || 0}
+                        </span>
                         {isRoundActive && currentQuestion && (
                           <Button
                             size="sm"
-                            variant={isThisAwarded ? 'secondary' : 'default'}
+                            variant={isThisAwarded ? "secondary" : "default"}
                             disabled={!canAward}
                             onClick={() => handleAwardTeam(team._id)}
-                            title={selectedOption === null ? 'Select an option first' : (awardedTeamId ? 'Already awarded' : '')}
+                            title={
+                              selectedOption === null
+                                ? "Select an option first"
+                                : awardedTeamId
+                                ? "Already awarded"
+                                : ""
+                            }
                           >
-                            {isOptionCorrect ? `+${currentQuestion.points}` : '+0'}
+                            {isOptionCorrect
+                              ? `+${currentQuestion.points}`
+                              : "+0"}
                           </Button>
                         )}
                       </div>
@@ -684,8 +957,8 @@ export default function ManageCompetitionPage() {
               <CardTitle>Stage Actions</CardTitle>
             </CardHeader>
             <CardContent>
-              <Button 
-                className="w-full" 
+              <Button
+                className="w-full"
                 onClick={advanceToNextStage}
                 disabled={isRoundActive}
               >
