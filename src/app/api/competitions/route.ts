@@ -28,6 +28,7 @@ export async function GET() {
       .sort({ createdAt: -1 });
     return NextResponse.json({ success: true, data: competitions });
   } catch (error) {
+    console.log(error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch competitions' },
       { status: 500 }

@@ -12,6 +12,7 @@ export async function GET() {
       .sort({ createdAt: -1 });
     return NextResponse.json({ success: true, data: teams });
   } catch (error) {
+     console.log(error)
     return NextResponse.json(
       { success: false, error: 'Failed to fetch teams' },
       { status: 500 }

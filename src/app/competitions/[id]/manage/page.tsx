@@ -120,24 +120,44 @@ export default function ManageCompetitionPage() {
     setIsOptionCorrect(!!correct);
   };
 
-  const handleAwardTeam = (teamId: string) => {
+  const handleAwardTeam = async (teamId: string) => {
     if (!currentQuestion) return;
     if (selectedOption === null) return; // must choose option first
     if (awardedTeamId) return; // already awarded for this question
     const pts = isOptionCorrect ? currentQuestion.points : 0;
+    const newTotal = (teamScores[teamId] || 0) + pts;
     if (pts > 0) {
-      setTeamScores(prev => ({ ...prev, [teamId]: (prev[teamId] || 0) + pts }));
+      setTeamScores(prev => ({ ...prev, [teamId]: newTotal }));
       toast({ title: 'Points Awarded', description: `+${pts} to selected team` });
     } else {
       toast({ title: 'Incorrect', description: '0 points awarded' });
     }
     setAwardedTeamId(teamId);
+
+    // Persist to DB (best-effort; UI already updated)
+    try {
+      await fetch(`/api/teams/${teamId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalScore: newTotal })
+      });
+      // Optionally reflect in local competition/currentGroup for consistency
+      setCurrentGroup((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          teams: prev.teams.map(t => t._id === teamId ? { ...t, totalScore: newTotal } : t)
+        };
+      });
+    } catch (e) {
+      toast({ title: 'Warning', description: 'Failed to persist score immediately. It will remain in the UI.', variant: 'destructive' });
+    }
   };
 
   const initializeTeamScores = (teams: Team[]) => {
     const scores: {[key: string]: number} = {};
     teams.forEach(team => {
-      scores[team._id] = 0;
+      scores[team._id] = team.totalScore || 0;
     });
     setTeamScores(scores);
   };
