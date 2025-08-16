@@ -2,23 +2,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Team from '@/models/Team';
 import College from '@/models/College';
+import Group from '@/models/Group'; // 👈 add this if you have a Group model
 
 export async function GET() {
   try {
     await dbConnect();
     const teams = await Team.find({})
-      .populate('college', 'name code')
-      .populate('groupId', 'name stage')
+      .populate({
+        path: 'college',
+        model: College, // 👈 ensures College schema is registered
+        select: 'name code'
+      })
+      .populate({
+        path: 'groupId',
+        model: Group, // 👈 ensures Group schema is registered
+        select: 'name stage'
+      })
       .sort({ createdAt: -1 });
+
     return NextResponse.json({ success: true, data: teams });
   } catch (error) {
-     console.log(error)
+    console.log(error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch teams' },
       { status: 500 }
     );
   }
 }
+
 
 export async function POST(request: NextRequest) {
   try {
