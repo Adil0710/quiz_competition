@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowLeft, Users, Play, Trophy, Settings } from 'lucide-react';
+import { ArrowLeft, Users, Play, Trophy, Settings, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -38,6 +38,10 @@ export default function CompetitionDetailsPage() {
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [creatingMode, setCreatingMode] = useState<null | 'auto' | 'manual'>(null);
+  const [navManualLoading, setNavManualLoading] = useState(false);
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -92,6 +96,7 @@ export default function CompetitionDetailsPage() {
 
   const handleUpdate = async () => {
     try {
+      setSaving(true);
       const res = await fetch(`/api/competitions/${competitionId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -113,11 +118,14 @@ export default function CompetitionDetailsPage() {
       }
     } catch (e) {
       toast({ title: 'Error', description: 'Failed to update competition', variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleDelete = async () => {
     try {
+      setDeleting(true);
       const res = await fetch(`/api/competitions/${competitionId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
@@ -128,15 +136,28 @@ export default function CompetitionDetailsPage() {
       }
     } catch (e) {
       toast({ title: 'Error', description: 'Failed to delete competition', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
     }
   };
 
   const handleCreateGroups = async (mode: 'auto' | 'manual') => {
     try {
+      setCreatingMode(mode);
+      // If manual, build customGroups from existing teams in sequential order (6 groups, 3 teams each)
+      const customGroups = mode === 'manual' && competition ? Array.from({ length: 6 }).map((_, i) => {
+        const start = i * 3;
+        const slice = (competition.teams as any[]).slice(start, start + 3);
+        return {
+          name: `Group ${String.fromCharCode(65 + i)}`,
+          teams: slice.map((t: any) => t._id || t),
+        };
+      }) : undefined;
+
       const response = await fetch(`/api/competitions/${competitionId}/create-groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
+        body: JSON.stringify({ mode, customGroups })
       });
 
       const data = await response.json();
@@ -159,6 +180,8 @@ export default function CompetitionDetailsPage() {
         description: "Failed to create groups",
         variant: "destructive"
       });
+    } finally {
+      setCreatingMode(null);
     }
   };
 
@@ -225,10 +248,19 @@ export default function CompetitionDetailsPage() {
         <div className="flex gap-2">
           {competition.status === 'draft' && competition.teams.length === 18 && (
             <>
-              <Button variant="outline" onClick={() => handleCreateGroups('auto')}>
+              <Button variant="outline" onClick={() => handleCreateGroups('auto')} disabled={creatingMode!==null || navManualLoading}>
+                {creatingMode==='auto' ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                 Auto Create Groups
               </Button>
-              <Button variant="outline" onClick={() => handleCreateGroups('manual')}>
+              <Button
+                variant="outline"
+                disabled={navManualLoading || creatingMode!==null}
+                onClick={() => {
+                  setNavManualLoading(true);
+                  router.push(`/competitions/${competitionId}/groups/manual`);
+                }}
+              >
+                {navManualLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                 Manual Groups
               </Button>
             </>
@@ -284,15 +316,21 @@ export default function CompetitionDetailsPage() {
                 </div>
               </div>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleUpdate}>Save</AlertDialogAction>
+                <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleUpdate} disabled={saving}>
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                  Save
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
           {/* Delete */}
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive">Delete</Button>
+              <Button variant="destructive" disabled={deleting}>
+                {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                Delete
+              </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -302,8 +340,11 @@ export default function CompetitionDetailsPage() {
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} disabled={deleting}>
+                  {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                  Delete
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -430,10 +471,18 @@ export default function CompetitionDetailsPage() {
                   </p>
                   {competition.status === 'draft' && competition.teams.length === 18 && (
                     <div className="flex gap-2 justify-center mt-4">
-                      <Button onClick={() => handleCreateGroups('auto')}>
+                      <Button onClick={() => handleCreateGroups('auto')} disabled={navManualLoading}>
                         Auto Create Groups
                       </Button>
-                      <Button variant="outline" onClick={() => handleCreateGroups('manual')}>
+                      <Button
+                        variant="outline"
+                        disabled={navManualLoading}
+                        onClick={() => {
+                          setNavManualLoading(true);
+                          router.push(`/competitions/${competitionId}/groups/manual`);
+                        }}
+                      >
+                        {navManualLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
                         Manual Groups
                       </Button>
                     </div>

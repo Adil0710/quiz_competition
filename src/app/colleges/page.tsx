@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface College {
@@ -26,6 +26,8 @@ export default function CollegesPage() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [filteredColleges, setFilteredColleges] = useState<College[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCollege, setEditingCollege] = useState<College | null>(null);
@@ -71,7 +73,7 @@ export default function CollegesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
 
     try {
       const url = editingCollege ? `/api/colleges/${editingCollege._id}` : '/api/colleges';
@@ -127,6 +129,7 @@ export default function CollegesPage() {
     if (!confirm('Are you sure you want to delete this college?')) return;
 
     try {
+      setDeletingId(id);
       const response = await fetch(`/api/colleges/${id}`, { method: 'DELETE' });
       const data = await response.json();
 
@@ -149,6 +152,8 @@ export default function CollegesPage() {
         description: "Failed to delete college",
         variant: "destructive"
       });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -248,8 +253,15 @@ export default function CollegesPage() {
                 <Button type="button" variant="outline" onClick={handleDialogClose}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loading}>
-                  {loading ? 'Saving...' : (editingCollege ? 'Update' : 'Create')}
+                <Button type="submit" disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    editingCollege ? 'Update' : 'Create'
+                  )}
                 </Button>
               </DialogFooter>
             </form>

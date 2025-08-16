@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Question {
@@ -32,6 +32,8 @@ export default function QuestionsPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -86,7 +88,7 @@ export default function QuestionsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
 
     try {
       const formDataToSend = new FormData();
@@ -163,6 +165,7 @@ export default function QuestionsPage() {
     if (!confirm('Are you sure you want to delete this question?')) return;
 
     try {
+      setDeletingId(id);
       const response = await fetch(`/api/questions/${id}`, { method: 'DELETE' });
       const data = await response.json();
 
@@ -185,6 +188,8 @@ export default function QuestionsPage() {
         description: "Failed to delete question",
         variant: "destructive"
       });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -391,8 +396,15 @@ export default function QuestionsPage() {
                 <Button type="button" variant="outline" onClick={handleDialogClose}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loading}>
-                  {loading ? 'Saving...' : (editingQuestion ? 'Update' : 'Create')}
+                <Button type="submit" disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    editingQuestion ? 'Update' : 'Create'
+                  )}
                 </Button>
               </DialogFooter>
             </form>
@@ -503,8 +515,13 @@ export default function QuestionsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDelete(question._id)}
+                          disabled={deletingId === question._id}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          {deletingId === question._id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       </div>
                     </TableCell>

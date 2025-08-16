@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Search, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Users, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface College {
@@ -38,6 +38,8 @@ export default function TeamsPage() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -85,7 +87,7 @@ export default function TeamsPage() {
         variant: "destructive"
       });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -107,7 +109,7 @@ export default function TeamsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
 
     // Members are optional; filter only fully filled entries
     const validMembers = formData.members.filter(member => 
@@ -179,6 +181,7 @@ export default function TeamsPage() {
     if (!confirm('Are you sure you want to delete this team?')) return;
 
     try {
+      setDeletingId(id);
       const response = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
       const data = await response.json();
 
@@ -201,6 +204,8 @@ export default function TeamsPage() {
         description: "Failed to delete team",
         variant: "destructive"
       });
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -328,8 +333,15 @@ export default function TeamsPage() {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={loading}>
-                  {loading ? 'Saving...' : (editingTeam ? 'Update' : 'Create')}
+                <Button type="submit" disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    editingTeam ? 'Update' : 'Create'
+                  )}
                 </Button>
               </DialogFooter>
             </form>
