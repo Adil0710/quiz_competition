@@ -25,6 +25,7 @@ export interface ICompetition extends Document {
   teams: mongoose.Types.ObjectId[];
   groups: mongoose.Types.ObjectId[];
   rounds: IRound[];
+  teamScores: { team: mongoose.Types.ObjectId; score: number }[];
   usedQuestions: mongoose.Types.ObjectId[];
   startDate: Date;
   endDate?: Date;
@@ -106,6 +107,16 @@ const CompetitionSchema: Schema = new Schema({
     ref: 'Group'
   }],
   rounds: [RoundSchema],
+  teamScores: [{
+    team: {
+      type: Schema.Types.ObjectId,
+      ref: 'Team'
+    },
+    score: {
+      type: Number,
+      default: 0
+    }
+  }],
   usedQuestions: [{
     type: Schema.Types.ObjectId,
     ref: 'Question'

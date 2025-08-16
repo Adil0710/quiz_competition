@@ -10,6 +10,17 @@ import { ArrowLeft, Users, Play, Trophy, Settings } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface Competition {
   _id: string;
@@ -26,6 +37,14 @@ interface Competition {
 export default function CompetitionDetailsPage() {
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    status: 'draft' as Competition['status'],
+    currentStage: 'group' as Competition['currentStage'],
+    endDate: '' as string | ''
+  });
   const { toast } = useToast();
   const params = useParams();
   const router = useRouter();
@@ -43,6 +62,15 @@ export default function CompetitionDetailsPage() {
       const data = await response.json();
       if (data.success) {
         setCompetition(data.data);
+        // Seed form with fetched values
+        const c = data.data as Competition;
+        setForm({
+          name: c.name || '',
+          description: c.description || '',
+          status: c.status,
+          currentStage: c.currentStage,
+          endDate: c.endDate ? new Date(c.endDate).toISOString().slice(0, 10) : ''
+        });
       } else {
         toast({
           title: "Error",
@@ -59,6 +87,47 @@ export default function CompetitionDetailsPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          description: form.description,
+          status: form.status,
+          currentStage: form.currentStage,
+          endDate: form.endDate ? new Date(form.endDate).toISOString() : undefined,
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: 'Updated', description: 'Competition updated successfully' });
+        setEditOpen(false);
+        fetchCompetition();
+      } else {
+        toast({ title: 'Failed', description: data.error || 'Update failed', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: 'Failed to update competition', variant: 'destructive' });
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: 'Deleted', description: 'Competition deleted' });
+        router.push('/dashboard');
+      } else {
+        toast({ title: 'Failed', description: data.error || 'Delete failed', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: 'Failed to delete competition', variant: 'destructive' });
     }
   };
 
@@ -172,6 +241,72 @@ export default function CompetitionDetailsPage() {
               </Button>
             </Link>
           )}
+          {/* Edit */}
+          <AlertDialog open={editOpen} onOpenChange={setEditOpen}>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline">Edit</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Edit Competition</AlertDialogTitle>
+                <AlertDialogDescription>Update basic details.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Name</label>
+                  <input className="w-full border rounded px-3 py-2" value={form.name} onChange={e=>setForm(s=>({...s,name:e.target.value}))} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Description</label>
+                  <textarea className="w-full border rounded px-3 py-2" value={form.description} onChange={e=>setForm(s=>({...s,description:e.target.value}))} />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Status</label>
+                    <select className="w-full border rounded px-3 py-2" value={form.status} onChange={e=>setForm(s=>({...s,status:e.target.value as any}))}>
+                      <option value="draft">draft</option>
+                      <option value="ongoing">ongoing</option>
+                      <option value="completed">completed</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Stage</label>
+                    <select className="w-full border rounded px-3 py-2" value={form.currentStage} onChange={e=>setForm(s=>({...s,currentStage:e.target.value as any}))}>
+                      <option value="group">group</option>
+                      <option value="semi_final">semi_final</option>
+                      <option value="final">final</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">End Date</label>
+                    <input type="date" className="w-full border rounded px-3 py-2" value={form.endDate} onChange={e=>setForm(s=>({...s,endDate:e.target.value}))} />
+                  </div>
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleUpdate}>Save</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          {/* Delete */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive">Delete</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete competition?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action is permanent and cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

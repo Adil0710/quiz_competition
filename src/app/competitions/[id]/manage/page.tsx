@@ -90,7 +90,7 @@ export default function ManageCompetitionPage() {
         setCompetition(data.data);
         if (data.data.groups.length > 0) {
           setCurrentGroup(data.data.groups[0]);
-          initializeTeamScores(data.data.groups[0].teams);
+          initializeTeamScores(data.data.groups[0].teams, data.data.teamScores || []);
         }
       }
     } catch (error) {
@@ -134,30 +134,26 @@ export default function ManageCompetitionPage() {
     }
     setAwardedTeamId(teamId);
 
-    // Persist to DB (best-effort; UI already updated)
+    // Persist to competition-scoped scores
     try {
-      await fetch(`/api/teams/${teamId}`, {
-        method: 'PUT',
+      await fetch(`/api/competitions/${competitionId}/scores`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ totalScore: newTotal })
-      });
-      // Optionally reflect in local competition/currentGroup for consistency
-      setCurrentGroup((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          teams: prev.teams.map(t => t._id === teamId ? { ...t, totalScore: newTotal } : t)
-        };
+        body: JSON.stringify({ teamId, delta: pts })
       });
     } catch (e) {
-      toast({ title: 'Warning', description: 'Failed to persist score immediately. It will remain in the UI.', variant: 'destructive' });
+      toast({ title: 'Warning', description: 'Failed to persist competition score immediately. It will remain in the UI.', variant: 'destructive' });
     }
   };
 
-  const initializeTeamScores = (teams: Team[]) => {
+  const initializeTeamScores = (teams: Team[], compTeamScores: { team: string; score: number }[] = []) => {
+    const map: Record<string, number> = {};
+    for (const ts of compTeamScores) {
+      map[String(ts.team)] = ts.score || 0;
+    }
     const scores: {[key: string]: number} = {};
     teams.forEach(team => {
-      scores[team._id] = team.totalScore || 0;
+      scores[team._id] = map[team._id] ?? 0;
     });
     setTeamScores(scores);
   };

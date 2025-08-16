@@ -16,7 +16,7 @@ export async function GET(
   try {
     const { id } = await params;
     await dbConnect();
-    
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, error: 'Invalid competition ID' },
@@ -44,7 +44,7 @@ export async function GET(
           }
         }
       });
-    
+
     if (!competition) {
       return NextResponse.json(
         { success: false, error: 'Competition not found' },
@@ -54,9 +54,42 @@ export async function GET(
 
     return NextResponse.json({ success: true, data: competition });
   } catch (error) {
-    console.log(error)
+    console.log(error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch competition' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { id } = await params;
+    await dbConnect();
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid competition ID' },
+        { status: 400 }
+      );
+    }
+
+    const deleted = await Competition.findByIdAndDelete(id);
+
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: 'Competition not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, message: 'Competition deleted successfully' });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete competition' },
       { status: 500 }
     );
   }
