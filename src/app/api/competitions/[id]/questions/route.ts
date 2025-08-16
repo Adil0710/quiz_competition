@@ -91,3 +91,60 @@ export async function GET(
     );
   }
 }
+
+// POST /api/competitions/[id]/questions
+// Body: { type?: 'mcq' | 'media' | 'rapid_fire' }
+// Clears usage flags for this competition: pulls competitionId from Question.usedInCompetitions
+// and removes those questionIds from Competition.usedQuestions. If type is provided, only for that type.
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid competition id' },
+        { status: 400 }
+      );
+    }
+
+    const competitionId = new mongoose.Types.ObjectId(id);
+    const body = await request.json().catch(() => ({}));
+    const type = body?.type as 'mcq' | 'media' | 'rapid_fire' | undefined;
+
+    // Find affected questions first (those that currently mark this competition as used)
+    const questionFilter: any = {
+      usedInCompetitions: competitionId,
+    };
+    if (type) questionFilter.type = type;
+
+    const affected = await Question.find(questionFilter).select('_id');
+    const affectedIds = affected.map((q) => q._id);
+
+    if (affectedIds.length === 0) {
+      return NextResponse.json({ success: true, data: { updated: 0, removed: 0 } });
+    }
+
+    // Pull competition from questions
+    await Question.updateMany(
+      { _id: { $in: affectedIds } },
+      { $pull: { usedInCompetitions: competitionId } }
+    );
+
+    // Remove those ids from competition.usedQuestions
+    await Competition.updateOne(
+      { _id: competitionId },
+      { $pull: { usedQuestions: { $in: affectedIds } } }
+    );
+
+    return NextResponse.json({ success: true, data: { updated: affectedIds.length, removed: affectedIds.length } });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to reset question usage' },
+      { status: 500 }
+    );
+  }
+}

@@ -1,22 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Play, Pause, SkipForward, Trophy, Users, Clock } from 'lucide-react';
+import { ArrowLeft, Play, Pause, SkipForward, Trophy, Users, Clock, Check, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface Question {
   _id: string;
   question: string;
   type: 'mcq' | 'media' | 'rapid_fire';
   options?: string[];
-  correctAnswer?: string;
+  correctAnswer?: string | number;
   mediaUrl?: string;
   mediaType?: string;
   points: number;
@@ -47,6 +58,18 @@ export default function ManageCompetitionPage() {
   const [teamScores, setTeamScores] = useState<{[key: string]: number}>({});
   const [loading, setLoading] = useState(true);
   const [isRoundActive, setIsRoundActive] = useState(false);
+  // Timed reveal state
+  const [isVisible, setIsVisible] = useState(false);
+  const [countdown, setCountdown] = useState<number>(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Presentation mode
+  const [presenting, setPresenting] = useState(false);
+  const presentRef = useRef<HTMLDivElement | null>(null);
+  // Per-question selection & awarding state
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [isOptionCorrect, setIsOptionCorrect] = useState<boolean | null>(null);
+  const [awardedTeamId, setAwardedTeamId] = useState<string | null>(null);
+  const [noQuestionsForType, setNoQuestionsForType] = useState<'mcq' | 'media' | 'rapid_fire' | null>(null);
   
   const { toast } = useToast();
   const params = useParams();
@@ -81,6 +104,36 @@ export default function ManageCompetitionPage() {
     }
   };
 
+  const handleOptionClick = (index: number) => {
+    if (!currentQuestion || selectedOption !== null) return; // allow only first click
+    setSelectedOption(index);
+    const chosen = currentQuestion.options?.[index];
+    const ans = currentQuestion.correctAnswer;
+    let correct = false;
+    if (typeof ans === 'number') {
+      correct = index === ans;
+    } else if (typeof ans === 'string') {
+      const a = ans.trim().toLowerCase();
+      const b = (chosen || '').trim().toLowerCase();
+      correct = a === b;
+    }
+    setIsOptionCorrect(!!correct);
+  };
+
+  const handleAwardTeam = (teamId: string) => {
+    if (!currentQuestion) return;
+    if (selectedOption === null) return; // must choose option first
+    if (awardedTeamId) return; // already awarded for this question
+    const pts = isOptionCorrect ? currentQuestion.points : 0;
+    if (pts > 0) {
+      setTeamScores(prev => ({ ...prev, [teamId]: (prev[teamId] || 0) + pts }));
+      toast({ title: 'Points Awarded', description: `+${pts} to selected team` });
+    } else {
+      toast({ title: 'Incorrect', description: '0 points awarded' });
+    }
+    setAwardedTeamId(teamId);
+  };
+
   const initializeTeamScores = (teams: Team[]) => {
     const scores: {[key: string]: number} = {};
     teams.forEach(team => {
@@ -89,7 +142,7 @@ export default function ManageCompetitionPage() {
     setTeamScores(scores);
   };
 
-  const fetchQuestions = async (type: string, count: number = 6) => {
+  const fetchQuestions = async (type: string, count: number = 6): Promise<number> => {
     try {
       // Use competition-scoped endpoint to prevent repeats within this competition
       const response = await fetch(`/api/competitions/${competitionId}/questions?type=${type}&count=${count}`);
@@ -104,7 +157,11 @@ export default function ManageCompetitionPage() {
             description: "No unused questions of this type remain for this competition.",
             variant: "destructive"
           });
+          setNoQuestionsForType(type as 'mcq' | 'media' | 'rapid_fire');
+        } else {
+          setNoQuestionsForType(null);
         }
+        return questions.length;
       }
     } catch (error) {
       toast({
@@ -113,21 +170,120 @@ export default function ManageCompetitionPage() {
         variant: "destructive"
       });
     }
+    return 0;
   };
 
   const startRound = async (type: 'mcq' | 'media' | 'rapid_fire') => {
     setRoundType(type);
-    await fetchQuestions(type);
-    setIsRoundActive(true);
-    toast({
-      title: "Round Started",
-      description: `${type.toUpperCase()} round has begun`
-    });
+    const count = await fetchQuestions(type);
+    const hasQuestions = count > 0;
+    setIsRoundActive(hasQuestions);
+    if (hasQuestions) {
+      toast({
+        title: "Round Started",
+        description: `${type.toUpperCase()} round has begun`
+      });
+    }
+  };
+
+  const resetUsage = async (type: 'mcq' | 'media' | 'rapid_fire') => {
+    try {
+      const res = await fetch(`/api/competitions/${competitionId}/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: 'Usage reset',
+          description: `Cleared ${type.toUpperCase()} usage for this competition.`
+        });
+        // If current round matches, refetch questions and update state
+        if (roundType === type) {
+          const count = await fetchQuestions(type);
+          setIsRoundActive(count > 0);
+        }
+        setNoQuestionsForType(null);
+      } else {
+        toast({ title: 'Failed', description: data.error || 'Could not reset usage', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: 'Failed to reset usage', variant: 'destructive' });
+    }
+  };
+
+  // Show question + answer for 15 seconds
+  const revealForSeconds = (seconds: number = 15) => {
+    // Clear any existing timer first
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsVisible(true);
+    setCountdown(seconds);
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          setIsVisible(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const hideNow = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsVisible(false);
+    setCountdown(0);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Keep presenting state in sync with Fullscreen API
+  useEffect(() => {
+    const handler = () => {
+      const isFs = !!document.fullscreenElement;
+      setPresenting(isFs);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  const enterPresentation = async () => {
+    if (presentRef.current && !document.fullscreenElement) {
+      await presentRef.current.requestFullscreen().catch(() => {});
+      setPresenting(true);
+    }
+  };
+
+  const exitPresentation = async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      setPresenting(false);
+    }
   };
 
   const nextQuestion = () => {
     if (currentQuestionIndex < currentQuestions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
+      // reset per-question state
+      setSelectedOption(null);
+      setIsOptionCorrect(null);
+      setAwardedTeamId(null);
+      hideNow();
     } else {
       endRound();
     }
@@ -135,6 +291,10 @@ export default function ManageCompetitionPage() {
 
   const endRound = () => {
     setIsRoundActive(false);
+    // reset per-question state
+    setSelectedOption(null);
+    setIsOptionCorrect(null);
+    setAwardedTeamId(null);
     toast({
       title: "Round Completed",
       description: "Round has ended. Review scores and proceed to next round."
@@ -244,7 +404,7 @@ export default function ManageCompetitionPage() {
             </CardHeader>
             <CardContent>
               {!isRoundActive ? (
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-4">
                   <Button onClick={() => startRound('mcq')}>
                     Start MCQ Round
                   </Button>
@@ -256,70 +416,177 @@ export default function ManageCompetitionPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex gap-4">
+                <div className="flex flex-wrap items-center gap-4">
                   <Button onClick={nextQuestion} disabled={!currentQuestion}>
                     Next Question
                   </Button>
                   <Button variant="outline" onClick={endRound}>
                     End Round
                   </Button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button onClick={() => revealForSeconds(15)} disabled={!currentQuestion}>
+                      {isVisible ? `Showing (${countdown}s)` : 'Show for 15s'}
+                    </Button>
+                    <Button variant="outline" onClick={hideNow} disabled={!isVisible}>Hide Now</Button>
+                    {!presenting ? (
+                      <Button variant="secondary" onClick={enterPresentation} disabled={!currentQuestion}>Presentation Mode</Button>
+                    ) : (
+                      <Button variant="destructive" onClick={exitPresentation}>Exit Presentation</Button>
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Current Question */}
-          {isRoundActive && currentQuestion && (
+          {/* Inline no-questions message with reset confirmation */}
+          {!isRoundActive && noQuestionsForType && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Question {currentQuestionIndex + 1} of {currentQuestions.length}</span>
-                  <Badge>{roundType.toUpperCase()}</Badge>
-                </CardTitle>
+                <CardTitle className="text-base">No questions available</CardTitle>
+                <CardDescription>No unused questions of this type remain for this competition.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="text-lg font-medium">{currentQuestion.question}</div>
-                
-                {currentQuestion.mediaUrl && (
-                  <div className="border rounded-lg p-4">
-                    {currentQuestion.mediaType === 'image' && (
-                      <img src={currentQuestion.mediaUrl} alt="Question media" className="max-w-full h-auto" />
+              <CardContent>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive">
+                      Reset {noQuestionsForType.replace('_', ' ')} usage now
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Reset question usage?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will clear the used flags for the {noQuestionsForType.replace('_', ' ')} round in this competition so they can be selected again.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => resetUsage(noQuestionsForType)}>Reset</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Current Question */}
+          {isRoundActive && currentQuestion && (
+            <Card ref={presentRef} className={presenting ? 'fixed inset-0 z-50 bg-black text-white overflow-auto' : ''}>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className={presenting ? 'text-2xl' : ''}>Question {currentQuestionIndex + 1} of {currentQuestions.length}</span>
+                  <div className="flex items-center gap-3">
+                    {isVisible && (
+                      <span className={presenting ? 'text-xl font-semibold' : 'text-sm font-semibold'}>Time left: {countdown}s</span>
                     )}
-                    {currentQuestion.mediaType === 'audio' && (
-                      <audio controls className="w-full">
-                        <source src={currentQuestion.mediaUrl} />
-                      </audio>
-                    )}
-                    {currentQuestion.mediaType === 'video' && (
-                      <video controls className="w-full max-h-96">
-                        <source src={currentQuestion.mediaUrl} />
-                      </video>
-                    )}
+                    <Badge>{roundType.toUpperCase()}</Badge>
+                  </div>
+                </CardTitle>
+                {presenting && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button onClick={() => revealForSeconds(15)} disabled={!currentQuestion}>Show for 15s</Button>
+                    <Button variant="outline" onClick={hideNow} disabled={!isVisible}>Hide Now</Button>
+                    <Button onClick={nextQuestion} disabled={!currentQuestion}>Next Question</Button>
+                    <Button variant="outline" onClick={endRound}>End Round</Button>
+                    <Button variant="destructive" onClick={exitPresentation}>Exit Presentation</Button>
                   </div>
                 )}
+              </CardHeader>
+              <CardContent className={presenting ? 'space-y-6 max-w-5xl mx-auto p-6' : 'space-y-4'}>
+                {isVisible ? (
+                  <>
+                    <div className={presenting ? 'text-3xl font-semibold' : 'text-lg font-medium'}>{currentQuestion.question}</div>
 
-                {currentQuestion.options && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {currentQuestion.options.map((option, index) => (
-                      <div key={index} className="p-3 border rounded-lg">
-                        <span className="font-medium">{String.fromCharCode(65 + index)}.</span> {option}
+                    {currentQuestion.mediaUrl && (
+                      <div className={presenting ? 'rounded-lg p-4 bg-neutral-900' : 'border rounded-lg p-4'}>
+                        {currentQuestion.mediaType === 'image' && (
+                          <img src={currentQuestion.mediaUrl} alt="Question media" className={presenting ? 'max-w-full h-auto mx-auto' : 'max-w-full h-auto'} />
+                        )}
+                        {currentQuestion.mediaType === 'audio' && (
+                          <audio controls className="w-full">
+                            <source src={currentQuestion.mediaUrl} />
+                          </audio>
+                        )}
+                        {currentQuestion.mediaType === 'video' && (
+                          <video controls className={presenting ? 'w-full max-h-[70vh] mx-auto' : 'w-full max-h-96'}>
+                            <source src={currentQuestion.mediaUrl} />
+                          </video>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {roundType === 'rapid_fire' && (
-                  <div className="text-center">
-                    <p className="text-muted-foreground">Admin will ask the question. Click on team that answers correctly.</p>
-                  </div>
-                )}
+                    {currentQuestion.options && (
+                      <div className={presenting ? 'grid grid-cols-2 gap-4' : 'grid grid-cols-2 gap-2'}>
+                        {currentQuestion.options.map((option, index) => {
+                          const isSelected = selectedOption === index;
+                          const correctSelected = isSelected && isOptionCorrect === true;
+                          const wrongSelected = isSelected && isOptionCorrect === false;
+                          const base = presenting ? 'p-5 rounded-lg cursor-pointer select-none' : 'p-3 border rounded-lg cursor-pointer select-none';
+                          const stateCls = correctSelected
+                            ? ' border-2 border-green-500 ring-2 ring-green-500'
+                            : wrongSelected
+                            ? ' border-2 border-red-500 ring-2 ring-red-500'
+                            : presenting ? ' bg-neutral-900' : '';
+                          return (
+                            <div
+                              key={index}
+                              className={`${base}${stateCls}`}
+                              onClick={() => (isVisible ? handleOptionClick(index) : undefined)}
+                              role="button"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={presenting ? 'font-bold text-2xl' : 'font-medium'}>
+                                  {String.fromCharCode(65 + index)}.
+                                </span>
+                                <span className={presenting ? 'text-2xl' : ''}>{option}</span>
+                                {correctSelected && <Check className={presenting ? 'text-green-400 h-7 w-7 ml-auto' : 'text-green-600 h-4 w-4 ml-auto'} />}
+                                {wrongSelected && <X className={presenting ? 'text-red-400 h-7 w-7 ml-auto' : 'text-red-600 h-4 w-4 ml-auto'} />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                <div className="flex justify-between items-center pt-4 border-t">
-                  <span className="text-sm text-muted-foreground">Points: {currentQuestion.points}</span>
-                  {currentQuestion.correctAnswer && roundType !== 'rapid_fire' && (
-                    <span className="text-sm font-medium">Answer: {currentQuestion.correctAnswer}</span>
-                  )}
-                </div>
+                    {roundType === 'rapid_fire' && (
+                      <div className="text-center">
+                        <p className={presenting ? 'opacity-70 text-xl' : 'text-muted-foreground'}>Admin will ask the question. Click on team that answers correctly.</p>
+                      </div>
+                    )}
+
+                    <div className={presenting ? 'flex justify-between items-center pt-6 border-t border-neutral-800' : 'flex justify-between items-center pt-4 border-t'}>
+                      <span className={presenting ? 'text-xl opacity-80' : 'text-sm text-muted-foreground'}>Points: {currentQuestion.points}</span>
+                      {/* Intentionally not showing the answer */}
+                      {selectedOption !== null && (
+                        <span className={isOptionCorrect ? (presenting ? 'text-2xl font-semibold text-green-400' : 'text-sm font-medium text-green-600') : (presenting ? 'text-2xl font-semibold text-red-400' : 'text-sm font-medium text-red-600')}>
+                          {isOptionCorrect ? 'Correct' : 'Wrong'}
+                        </span>
+                      )}
+                    </div>
+
+                    {presenting && currentGroup && (
+                      <div className="mt-6">
+                        <div className="grid grid-cols-2 gap-3">
+                          {currentGroup.teams.map((team) => (
+                            <Button
+                              key={team._id}
+                              className={`justify-between ${awardedTeamId === team._id ? 'opacity-70' : ''}`}
+                              variant={awardedTeamId === team._id ? 'secondary' : 'default'}
+                              onClick={() => handleAwardTeam(team._id)}
+                              disabled={selectedOption === null || !!awardedTeamId}
+                            >
+                              <span>{team.name} ({team.college.code})</span>
+                              <span className="font-semibold">{isOptionCorrect ? `+${currentQuestion.points}` : '+0'}</span>
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className={presenting ? 'text-center opacity-70 text-xl' : 'text-center text-muted-foreground'}>Question is hidden. Click "Show for 15s" to reveal.</div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -365,25 +632,32 @@ export default function ManageCompetitionPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {currentGroup.teams.map((team) => (
-                  <div key={team._id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{team.name}</div>
-                      <div className="text-sm text-muted-foreground">{team.college.code}</div>
+                {currentGroup.teams.map((team) => {
+                  const isThisAwarded = awardedTeamId === team._id;
+                  const canAward = isRoundActive && !!currentQuestion && selectedOption !== null && !awardedTeamId;
+                  return (
+                    <div key={team._id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div>
+                        <div className="font-medium">{team.name}</div>
+                        <div className="text-sm text-muted-foreground">{team.college.code}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-lg">{teamScores[team._id] || 0}</span>
+                        {isRoundActive && currentQuestion && (
+                          <Button
+                            size="sm"
+                            variant={isThisAwarded ? 'secondary' : 'default'}
+                            disabled={!canAward}
+                            onClick={() => handleAwardTeam(team._id)}
+                            title={selectedOption === null ? 'Select an option first' : (awardedTeamId ? 'Already awarded' : '')}
+                          >
+                            {isOptionCorrect ? `+${currentQuestion.points}` : '+0'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-lg">{teamScores[team._id] || 0}</span>
-                      {isRoundActive && currentQuestion && (
-                        <Button 
-                          size="sm" 
-                          onClick={() => awardPoints(team._id, currentQuestion.points)}
-                        >
-                          +{currentQuestion.points}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           )}
