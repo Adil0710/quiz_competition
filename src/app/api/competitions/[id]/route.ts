@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Competition from '@/models/Competition';
-import mongoose from 'mongoose';
+import mongoose, { model } from 'mongoose';
 import Group from '@/models/Group';
+import College from '@/models/College';
+import Team from '@/models/Team';
 
 // Ensure the Group model is registered (prevent tree-shaking of unused import)
 void Group;
@@ -25,8 +27,10 @@ export async function GET(
     const competition = await Competition.findById(id)
       .populate({
         path: 'teams',
+        model: Team,
         populate: {
           path: 'college',
+          model: College,
           select: 'name code'
         }
       })
