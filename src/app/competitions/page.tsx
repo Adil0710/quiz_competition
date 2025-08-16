@@ -143,7 +143,7 @@ export default function CompetitionsListPage() {
         <CardContent>
           {loading ? (
             <div className="space-y-2">
-              {[...Array(5)].map((_, i) => (
+              {[...Array(6)].map((_, i) => (
                 <div key={i} className="grid grid-cols-12 gap-4 items-center">
                   <Skeleton className="col-span-3 h-6" />
                   <Skeleton className="col-span-3 h-6" />

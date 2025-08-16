@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Search, Loader2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 
 interface College {
@@ -295,7 +296,17 @@ export default function CollegesPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8">Loading colleges...</div>
+            <div className="space-y-2">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="grid grid-cols-12 gap-4 items-center">
+                  <Skeleton className="col-span-3 h-6" />
+                  <Skeleton className="col-span-2 h-6" />
+                  <Skeleton className="col-span-3 h-6" />
+                  <Skeleton className="col-span-2 h-6" />
+                  <Skeleton className="col-span-2 h-10" />
+                </div>
+              ))}
+            </div>
           ) : filteredColleges.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">No colleges found</p>
