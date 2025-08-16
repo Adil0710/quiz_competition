@@ -3,6 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import Competition from "@/models/Competition";
 import Team from "@/models/Team";
 import Group from "@/models/Group";
+import College from "@/models/College";
 
 export async function GET() {
   try {
@@ -14,6 +15,7 @@ export async function GET() {
         select: "name college members totalScore currentStage",
         populate: {
           path: "college",
+          model: College,
           select: "name code",
         },
       })
