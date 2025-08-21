@@ -41,6 +41,7 @@ export default function CompetitionDetailsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resettingScores, setResettingScores] = useState(false);
   const [creatingMode, setCreatingMode] = useState<null | 'auto' | 'manual'>(null);
   const [navManualLoading, setNavManualLoading] = useState(false);
   const [form, setForm] = useState({
@@ -92,6 +93,24 @@ export default function CompetitionDetailsPage() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetScores = async () => {
+    try {
+      setResettingScores(true);
+      const res = await fetch(`/api/competitions/${competitionId}/scores`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: 'Scores Reset', description: 'All team scores for this competition were cleared.' });
+        fetchCompetition();
+      } else {
+        toast({ title: 'Failed', description: data.error || 'Could not reset scores', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: 'Failed to reset scores', variant: 'destructive' });
+    } finally {
+      setResettingScores(false);
     }
   };
 
@@ -344,6 +363,10 @@ export default function CompetitionDetailsPage() {
               </Button>
             </Link>
           )}
+          <Button variant="destructive" onClick={handleResetScores} disabled={resettingScores}>
+            {resettingScores ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+            Reset Scores
+          </Button>
           {/* Edit */}
           <AlertDialog open={editOpen} onOpenChange={setEditOpen}>
             <AlertDialogTrigger asChild>
@@ -516,7 +539,14 @@ export default function CompetitionDetailsPage() {
                             {(team.currentStage || 'group').replace('_', ' ')}
                           </Badge>
                         </TableCell>
-                        <TableCell>{team.totalScore || 0}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const entry = (competition as any).teamScores?.find(
+                              (ts: any) => String(ts.team?._id ?? ts.team) === String(team._id)
+                            );
+                            return entry?.score ?? 0;
+                          })()}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

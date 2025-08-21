@@ -5,6 +5,44 @@ import mongoose from 'mongoose';
 
 // POST /api/competitions/[id]/scores
 // Body: { teamId: string, delta: number }
+
+// DELETE /api/competitions/[id]/scores
+// Resets competition-scoped scores for all teams in this competition
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    await dbConnect();
+    const { id } = await params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid competition id' },
+        { status: 400 }
+      );
+    }
+
+    const competition = await Competition.findById(id);
+    if (!competition) {
+      return NextResponse.json(
+        { success: false, error: 'Competition not found' },
+        { status: 404 }
+      );
+    }
+
+    // Reset the competition-scoped teamScores
+    competition.teamScores = [] as any;
+    await competition.save();
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: 'Failed to reset competition scores' },
+      { status: 500 }
+    );
+  }
+}
 // Increments (or initializes) the competition-scoped score for a team.
 export async function POST(
   request: NextRequest,

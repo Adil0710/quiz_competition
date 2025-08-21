@@ -152,9 +152,16 @@ export default function ManageCompetitionPage() {
 
   const handleAwardTeam = async (teamId: string) => {
     if (!currentQuestion) return;
-    if (selectedOption === null) return; // must choose option first
+    // For MCQ, require an option selection first. For Media/Rapid Fire, allow direct awarding.
+    if (roundType === "mcq" && selectedOption === null) return;
     if (awardedTeamId) return; // already awarded for this question
-    const pts = isOptionCorrect ? currentQuestion.points : 0;
+    // In MCQ, award only if correct; in Media/Rapid Fire, admin click implies correctness.
+    const pts =
+      roundType === "mcq"
+        ? isOptionCorrect
+          ? currentQuestion.points
+          : 0
+        : currentQuestion.points;
     const newTotal = (teamScores[teamId] || 0) + pts;
     if (pts > 0) {
       setTeamScores((prev) => ({ ...prev, [teamId]: newTotal }));
@@ -370,6 +377,26 @@ export default function ManageCompetitionPage() {
       title: "Round Completed",
       description: "Round has ended. Review scores and proceed to next round.",
     });
+  };
+
+  const resetCompetitionScores = async () => {
+    try {
+      await fetch(`/api/competitions/${competitionId}/scores`, { method: "DELETE" });
+      // Reset local team scores to 0 for current group
+      if (currentGroup) {
+        const zeros: Record<string, number> = {};
+        currentGroup.teams.forEach((t) => (zeros[t._id] = 0));
+        setTeamScores(zeros);
+      } else {
+        setTeamScores({});
+      }
+      setAwardedTeamId(null);
+      setSelectedOption(null);
+      setIsOptionCorrect(null);
+      toast({ title: "Scores Reset", description: "All competition scores cleared." });
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to reset scores", variant: "destructive" });
+    }
   };
 
   const awardPoints = (teamId: string, points: number) => {
@@ -911,16 +938,19 @@ export default function ManageCompetitionPage() {
                               }
                               onClick={() => handleAwardTeam(team._id)}
                               disabled={
-                                selectedOption === null || !!awardedTeamId
+                                (roundType === "mcq" && selectedOption === null) ||
+                                !!awardedTeamId
                               }
                             >
                               <span>
                                 {team.name} ({team.college.code})
                               </span>
                               <span className="font-semibold">
-                                {isOptionCorrect
-                                  ? `+${currentQuestion.points}`
-                                  : "+0"}
+                                {roundType === "mcq"
+                                  ? isOptionCorrect
+                                    ? `+${currentQuestion.points}`
+                                    : "+0"
+                                  : `+${currentQuestion.points}`}
                               </span>
                             </Button>
                           ))}
@@ -991,7 +1021,7 @@ export default function ManageCompetitionPage() {
                   const canAward =
                     isRoundActive &&
                     !!currentQuestion &&
-                    selectedOption !== null &&
+                    (roundType !== "mcq" || selectedOption !== null) &&
                     !awardedTeamId;
                   return (
                     <div
@@ -1015,16 +1045,18 @@ export default function ManageCompetitionPage() {
                             disabled={!canAward}
                             onClick={() => handleAwardTeam(team._id)}
                             title={
-                              selectedOption === null
+                              roundType === "mcq" && selectedOption === null
                                 ? "Select an option first"
                                 : awardedTeamId
                                 ? "Already awarded"
                                 : ""
                             }
                           >
-                            {isOptionCorrect
-                              ? `+${currentQuestion.points}`
-                              : "+0"}
+                            {roundType === "mcq"
+                              ? isOptionCorrect
+                                ? `+${currentQuestion.points}`
+                                : "+0"
+                              : `+${currentQuestion.points}`}
                           </Button>
                         )}
                       </div>
@@ -1041,6 +1073,14 @@ export default function ManageCompetitionPage() {
               <CardTitle>Stage Actions</CardTitle>
             </CardHeader>
             <CardContent>
+              <Button
+                className="w-full mb-3"
+                variant="destructive"
+                onClick={resetCompetitionScores}
+                disabled={isRoundActive}
+              >
+                Reset Competition Scores
+              </Button>
               <Button
                 className="w-full"
                 onClick={advanceToNextStage}
