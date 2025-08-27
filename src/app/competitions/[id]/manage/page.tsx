@@ -603,6 +603,12 @@ export default function ManageCompetitionPage() {
         setQuestions(data.data);
         setCurrentQuestion(data.data[0]);
         console.log("Set current question:", data.data[0]);
+        
+        // Preload images immediately if it's a visual rapid fire question
+        if (data.data[0]?.type === "visual_rapid_fire" && data.data[0].imageUrls) {
+          console.log("Preloading images for visual rapid fire question");
+          preloadImages(data.data[0].imageUrls);
+        }
         setNoQuestionsForType(false);
         setMediaLoaded(false);
 
@@ -705,12 +711,13 @@ export default function ManageCompetitionPage() {
     } else if (roundType === "sequence") {
       console.log("Sequence: Showing options for sequence input");
     } else if (roundType === "visual_rapid_fire") {
-      // For visual rapid fire, only reset image index and preload images - don't start timer yet
-      console.log("Visual Rapid Fire: Resetting image index and preloading images");
+      // For visual rapid fire, only reset image index - images already preloaded
+      console.log("Visual Rapid Fire: Resetting image index");
       setCurrentImageIndex(0);
-      if (currentQuestion?.imageUrls) {
-        preloadImages(currentQuestion.imageUrls);
-        // Timer will start when first image loads
+      // Start timer immediately since images are already preloaded
+      if (!isTimerActive) {
+        startTimer(60);
+        playTimerAudio();
       }
     }
 
@@ -823,16 +830,6 @@ export default function ManageCompetitionPage() {
         setImagesPreloaded(prev => {
           const updated = [...prev];
           updated[index] = true;
-          
-          // Start timer when first image loads (only once) - use setTimeout to avoid render cycle issues
-          if (index === 0 && roundType === "visual_rapid_fire" && !isTimerActive) {
-            console.log("Visual Rapid Fire: First image loaded, starting timer");
-            setTimeout(() => {
-              startTimer(60);
-              playTimerAudio();
-            }, 0);
-          }
-          
           return updated;
         });
       };
@@ -842,6 +839,14 @@ export default function ManageCompetitionPage() {
       img.src = url;
     });
   };
+
+  // Preload images when currentQuestion changes for visual rapid fire
+  useEffect(() => {
+    if (currentQuestion?.type === "visual_rapid_fire" && currentQuestion.imageUrls) {
+      console.log("Preloading visual rapid fire images for question:", currentQuestion._id);
+      preloadImages(currentQuestion.imageUrls);
+    }
+  }, [currentQuestion]);
 
   const handleNextQuestion = () => {
     // Stop all audio when moving to next question

@@ -31,7 +31,7 @@ export async function POST(
       );
     }
 
-    const team = await Team.findById(id);
+    const team = await Team.findById(id).select('name totalScore').lean();
     if (!team) {
       return NextResponse.json(
         { success: false, error: "Team not found" },
@@ -39,17 +39,20 @@ export async function POST(
       );
     }
 
-    // Update team's totalScore
-    team.totalScore = (team.totalScore || 0) + points;
-    await team.save();
+    // Update team's totalScore using atomic operation
+    const updatedTeam = await Team.findByIdAndUpdate(
+      id,
+      { $inc: { totalScore: points } },
+      { new: true, select: 'name totalScore' }
+    ).lean();
 
     return NextResponse.json({ 
       success: true, 
-      message: `Added ${points} points to team ${team.name}`,
+      message: `Added ${points} points to team ${(updatedTeam as any)?.name}`,
       data: { 
         teamId: id, 
         points, 
-        newTotalScore: team.totalScore 
+        newTotalScore: (updatedTeam as any)?.totalScore 
       }
     });
 

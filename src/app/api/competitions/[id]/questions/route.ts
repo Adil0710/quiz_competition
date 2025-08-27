@@ -47,7 +47,7 @@ export async function GET(
       );
     }
 
-    const competition = await Competition.findById(competitionId);
+    const competition = await Competition.findById(competitionId).select('_id').lean();
     if (!competition) {
       return NextResponse.json(
         { success: false, error: "Competition not found" },
@@ -74,7 +74,10 @@ export async function GET(
     
     if (!available || available.length === 0) {
       // Try without competition filter to see if questions exist at all
-      const allQuestions = await Question.find({ type, phase }).limit(count);
+      const allQuestions = await Question.find({ type, phase })
+        .select('question type options correctAnswer mediaUrl mediaType imageUrls difficulty category points phase')
+        .limit(count)
+        .lean();
       console.log(`Total questions in DB for type ${type}, phase ${phase}:`, allQuestions.length);
       
       if (allQuestions.length > 0) {
@@ -142,7 +145,7 @@ export async function POST(
     };
     if (type) questionFilter.type = type;
 
-    const affected = await Question.find(questionFilter).select('_id');
+    const affected = await Question.find(questionFilter).select('_id').lean();
     const affectedIds = affected.map((q) => q._id);
 
     if (affectedIds.length === 0) {

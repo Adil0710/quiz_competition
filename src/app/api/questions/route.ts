@@ -16,7 +16,10 @@ export async function GET(request: NextRequest) {
     if (category) filter.category = category;
     if (unused === 'true') filter.isUsed = false;
 
-    const questions = await Question.find(filter).sort({ createdAt: -1 });
+    const questions = await Question.find(filter)
+      .select('question type options correctAnswer mediaUrl mediaType imageUrls difficulty category points phase isUsed')
+      .sort({ createdAt: -1 })
+      .lean();
     return NextResponse.json({ success: true, data: questions });
   } catch (error) {
     return NextResponse.json(
@@ -74,6 +77,10 @@ export async function POST(request: NextRequest) {
     };
 
     const newQuestion = await Question.create(questionData);
+    // Return lean version for consistency
+    const leanQuestion = await Question.findById(newQuestion._id)
+      .select('question type options correctAnswer mediaUrl mediaType imageUrls difficulty category points phase isUsed')
+      .lean();
     return NextResponse.json({ success: true, data: newQuestion }, { status: 201 });
   } catch (error) {
     return NextResponse.json(

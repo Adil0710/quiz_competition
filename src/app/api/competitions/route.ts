@@ -9,6 +9,7 @@ export async function GET() {
   try {
     await dbConnect();
     const competitions = await Competition.find({})
+      .select("name description startDate status currentPhase teams groups createdAt")
       .populate({
         path: "teams",
         model: Team,
@@ -29,7 +30,8 @@ export async function GET() {
           populate: { path: "school", select: "name code" },
         },
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     return NextResponse.json({ success: true, data: competitions });
   } catch (error) {
     console.log(error);
@@ -72,7 +74,10 @@ export async function POST(request: NextRequest) {
 
     const populatedCompetition = await Competition.findById(
       competition._id
-    ).populate("teams", "name school");
+    )
+      .select("name description startDate status teams groups")
+      .populate("teams", "name school")
+      .lean();
 
     return NextResponse.json(
       { success: true, data: populatedCompetition },

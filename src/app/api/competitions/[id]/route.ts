@@ -25,9 +25,11 @@ export async function GET(
     }
 
     const competition = await Competition.findById(id)
+      .select('name description startDate status currentPhase teams groups createdAt')
       .populate({
         path: 'teams',
         model: Team,
+        select: 'name school members totalScore currentStage',
         populate: {
           path: 'school',
           model: School,
@@ -36,14 +38,17 @@ export async function GET(
       })
       .populate({
         path: 'groups',
+        select: 'name stage teams',
         populate: {
           path: 'teams',
+          select: 'name school totalScore',
           populate: {
             path: 'school',
             select: 'name code'
           }
         }
-      });
+      })
+      .lean();
 
     if (!competition) {
       return NextResponse.json(
@@ -117,13 +122,17 @@ export async function PUT(
       id,
       { name, description, status, currentStage, endDate },
       { new: true, runValidators: true }
-    ).populate({
-      path: 'teams',
-      populate: {
-        path: 'school',
-        select: 'name code'
-      }
-    });
+    )
+      .select('name description startDate status currentPhase teams groups')
+      .populate({
+        path: 'teams',
+        select: 'name school totalScore',
+        populate: {
+          path: 'school',
+          select: 'name code'
+        }
+      })
+      .lean();
 
     if (!competition) {
       return NextResponse.json(

@@ -20,8 +20,10 @@ request: Request,
     }
 
     const team = await Team.findById(id)
+      .select('name school groupId members totalScore currentStage')
       .populate('school', 'name code')
-      .populate('groupId', 'name stage');
+      .populate('groupId', 'name stage')
+      .lean();
     
     if (!team) {
       return NextResponse.json(
@@ -59,7 +61,7 @@ request: Request,
 
     // Validate school exists if provided
     if (school) {
-      const collegeExists = await School.findById(school);
+      const collegeExists = await School.findById(school).select('_id').lean();
       if (!collegeExists) {
         return NextResponse.json(
           { success: false, error: 'School not found' },
@@ -83,7 +85,11 @@ request: Request,
       id,
       { name, school, members, totalScore, currentStage },
       { new: true, runValidators: true }
-    ).populate('school', 'name code').populate('groupId', 'name stage');
+    )
+      .select('name school groupId members totalScore currentStage')
+      .populate('school', 'name code')
+      .populate('groupId', 'name stage')
+      .lean();
 
     if (!team) {
       return NextResponse.json(
