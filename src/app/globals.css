@@ -45,6 +45,7 @@
 
 :root {
   --radius: 0.625rem;
+  --quiz-font-family: inherit;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -118,5 +119,19 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .quiz-font {
+    font-family: var(--quiz-font-family) !important;
+  }
+  
+  .font-noto-nastaliq {
+    font-family: 'Noto Nastaliq Urdu', serif !important;
+  }
+  
+  .font-gulzar {
+    font-family: 'Gulzar', serif !important;
   }
 }

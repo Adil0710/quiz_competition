@@ -60,6 +60,7 @@ interface Question {
   correctAnswer?: string | number;
   mediaUrl?: string;
   mediaType?: "image" | "audio" | "video";
+  imageUrls?: string[]; // Array of images for visual rapid fire
   points: number;
   phase: "league" | "semi_final" | "final";
 }
@@ -107,9 +108,15 @@ export default function ManageCompetitionPage() {
   const [mediaLoaded, setMediaLoaded] = useState<boolean>(false);
   const [mediaLoading, setMediaLoading] = useState<boolean>(false);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [imagesPreloaded, setImagesPreloaded] = useState<boolean[]>([]);
 
   const presentRef = useRef<HTMLDivElement | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const rightAnswerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const wrongAnswerAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const { toast } = useToast();
   const params = useParams();
@@ -135,6 +142,8 @@ export default function ManageCompetitionPage() {
     currentBuzzerTeam,
     sequenceAnswers,
     showSequenceModal,
+    sequenceRevealStep,
+    sequenceComparison,
     isPresenting,
 
     // Actions
@@ -148,6 +157,7 @@ export default function ManageCompetitionPage() {
     updateTimer,
     setTeams,
     updateTeamScore,
+    setTeamScore,
     selectTeam,
     awardPoints,
     selectOption,
@@ -158,6 +168,9 @@ export default function ManageCompetitionPage() {
     addSequenceAnswer,
     clearSequenceAnswers,
     toggleSequenceModal,
+    nextSequenceReveal,
+    resetSequenceReveal,
+    setSequenceComparison,
     setPresenting,
     resetRound,
   } = useQuizStore();
@@ -225,6 +238,43 @@ export default function ManageCompetitionPage() {
     };
   }, [isTimerActive, updateTimer]);
 
+  // Audio helper functions
+  const playTimerAudio = () => {
+    if (timerAudioRef.current) {
+      timerAudioRef.current.currentTime = 0;
+      timerAudioRef.current.play().catch(console.error);
+    }
+  };
+
+  const playRightAnswerAudio = () => {
+    if (rightAnswerAudioRef.current) {
+      rightAnswerAudioRef.current.currentTime = 0;
+      rightAnswerAudioRef.current.play().catch(console.error);
+    }
+  };
+
+  const playWrongAnswerAudio = () => {
+    if (wrongAnswerAudioRef.current) {
+      wrongAnswerAudioRef.current.currentTime = 0;
+      wrongAnswerAudioRef.current.play().catch(console.error);
+    }
+  };
+
+  const stopAllAudio = () => {
+    if (timerAudioRef.current) {
+      timerAudioRef.current.pause();
+      timerAudioRef.current.currentTime = 0;
+    }
+    if (rightAnswerAudioRef.current) {
+      rightAnswerAudioRef.current.pause();
+      rightAnswerAudioRef.current.currentTime = 0;
+    }
+    if (wrongAnswerAudioRef.current) {
+      wrongAnswerAudioRef.current.pause();
+      wrongAnswerAudioRef.current.currentTime = 0;
+    }
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -270,12 +320,20 @@ export default function ManageCompetitionPage() {
             "currentState:",
             currentState
           );
-          handleOptionsToggle();
+          if (roundType === "visual_rapid_fire" && currentState === "options_shown") {
+            // Cycle through images for visual rapid fire
+            handleNextImage();
+          } else {
+            handleOptionsToggle();
+          }
           break;
         case "a":
           console.log("A key detected");
           if (currentQuestion) {
-            if (roundType === "media") {
+            if (roundType === "sequence" && showSequenceModal) {
+              // Handle sequence reveal step by step
+              handleSequenceReveal();
+            } else if (roundType === "media") {
               handleMediaAnswerToggle();
             } else {
               handleAnswerToggle();
@@ -289,6 +347,9 @@ export default function ManageCompetitionPage() {
         case "n":
           console.log("N key detected - next question");
           if (currentQuestion) {
+            // Stop all audio and hide question for all phases
+            stopAllAudio();
+            setState("idle");
             handleNextQuestion();
           }
           break;
@@ -341,7 +402,7 @@ export default function ManageCompetitionPage() {
 
         if (data.data.groups.length > 0) {
           setCurrentGroup(data.data.groups[0]);
-          initializeTeamScores(data.data.groups[0].teams);
+          await loadTeamsForGroup(data.data.groups[0].teams);
         }
       }
     } catch (error) {
@@ -356,14 +417,40 @@ export default function ManageCompetitionPage() {
     }
   };
 
-  const initializeTeamScores = (groupTeams: Team[]) => {
+  const loadTeamsForGroup = async (groupTeams: any[]) => {
     setTeams(groupTeams);
-    // Initialize team scores from database totalScore
-    groupTeams.forEach((team) => {
-      if (team.totalScore) {
-        updateTeamScore(team._id, team.totalScore);
-      }
-    });
+    
+    // Fetch current scores from database and initialize properly
+    await loadTeamScoresFromDB(groupTeams);
+  };
+
+  const loadTeamScoresFromDB = async (teams: any[]) => {
+    try {
+      // Fetch current scores for all teams
+      const scorePromises = teams.map(async (team) => {
+        const response = await fetch(`/api/teams/${team._id}`);
+        if (response.ok) {
+          const teamData = await response.json();
+          return { teamId: team._id, score: teamData.totalScore || 0 };
+        }
+        return { teamId: team._id, score: 0 };
+      });
+
+      const scores = await Promise.all(scorePromises);
+      
+      // Set scores directly from database (not additive)
+      scores.forEach(({ teamId, score }) => {
+        setTeamScore(teamId, score);
+      });
+
+      console.log('Team scores loaded from database:', scores);
+    } catch (error) {
+      console.error('Error loading team scores:', error);
+      // Fallback to team.totalScore if API fails
+      teams.forEach((team) => {
+        setTeamScore(team._id, team.totalScore || 0);
+      });
+    }
   };
 
   // Phase and round management functions
@@ -388,7 +475,7 @@ export default function ManageCompetitionPage() {
     } else if (type === "sequence") {
       return teamCount * 2; // 2 questions per team
     } else if (type === "visual_rapid_fire") {
-      return teamCount * 20; // 20 questions per team (updated from 25)
+      return 3; // 3 questions total, each with 20 images
     }
 
     return 10; // Default fallback
@@ -401,6 +488,11 @@ export default function ManageCompetitionPage() {
       setCurrentRoundIndex(nextIndex);
       const nextRoundType = rounds[nextIndex].type;
       setRoundType(nextRoundType as any);
+      
+      // Hide question and stop audio when navigating rounds
+      setState("idle");
+      stopAllAudio();
+      
       loadQuestions(nextRoundType, currentPhase);
     }
   };
@@ -413,6 +505,11 @@ export default function ManageCompetitionPage() {
         phaseStructure[currentPhase as keyof typeof phaseStructure];
       const prevRoundType = rounds[prevIndex].type;
       setRoundType(prevRoundType as any);
+      
+      // Hide question and stop audio when navigating rounds
+      setState("idle");
+      stopAllAudio();
+      
       loadQuestions(prevRoundType, currentPhase);
     }
   };
@@ -586,6 +683,7 @@ export default function ManageCompetitionPage() {
 
     if (roundType === "mcq") {
       startTimer(15); // 15 second timer for MCQ
+      playTimerAudio(); // Play timer sound
       console.log(
         "MCQ: Showing options with 15s timer, state set to options_shown"
       );
@@ -596,23 +694,23 @@ export default function ManageCompetitionPage() {
         // Timer will start when media loads via onLoad/onCanPlayThrough events
       } else {
         startTimer(15); // No media, start timer normally
+        playTimerAudio(); // Play timer sound
       }
     } else if (roundType === "buzzer") {
       console.log("Buzzer: Showing options for team selection");
     } else if (roundType === "rapid_fire") {
       startTimer(60); // 1 minute timer for rapid fire
+      playTimerAudio(); // Play timer sound
       console.log("Rapid Fire: Starting 1 minute timer");
     } else if (roundType === "sequence") {
       console.log("Sequence: Showing options for sequence input");
     } else if (roundType === "visual_rapid_fire") {
-      // For visual rapid fire, NEVER start timer immediately - always wait for images
-      if (currentQuestion?.mediaUrl) {
-        console.log(
-          "Visual Rapid Fire: Waiting for images to load before starting timer"
-        );
-        // Timer will start when image loads via onLoad event
-      } else {
-        startTimer(60); // No media, start timer normally
+      // For visual rapid fire, only reset image index and preload images - don't start timer yet
+      console.log("Visual Rapid Fire: Resetting image index and preloading images");
+      setCurrentImageIndex(0);
+      if (currentQuestion?.imageUrls) {
+        preloadImages(currentQuestion.imageUrls);
+        // Timer will start when first image loads
       }
     }
 
@@ -648,6 +746,7 @@ export default function ManageCompetitionPage() {
   const handleTimerToggle = () => {
     if (isTimerActive) {
       stopTimer();
+      stopAllAudio(); // Stop audio when timer is stopped
     } else {
       startTimer();
     }
@@ -658,11 +757,11 @@ export default function ManageCompetitionPage() {
     loadQuestions(type, "league"); // Default to league phase
   };
 
-  const handleGroupChange = (groupId: string) => {
+  const handleGroupChange = async (groupId: string) => {
     const group = competition?.groups.find((g) => g._id === groupId);
     if (group) {
       setCurrentGroup(group);
-      initializeTeamScores(group.teams);
+      await loadTeamsForGroup(group.teams);
     }
   };
 
@@ -696,7 +795,63 @@ export default function ManageCompetitionPage() {
     }
   };
 
+  const handleNextImage = () => {
+    if (roundType === "visual_rapid_fire" && currentQuestion?.imageUrls) {
+      const totalImages = currentQuestion.imageUrls.length;
+      
+      setCurrentImageIndex(prevIndex => {
+        const nextIndex = prevIndex + 1;
+        
+        if (nextIndex < totalImages) {
+          console.log(`Visual Rapid Fire: Showing image ${nextIndex + 1} of ${totalImages} (from ${prevIndex + 1})`);
+          return nextIndex;
+        } else {
+          console.log(`Visual Rapid Fire: Reached end of images (${totalImages} total), cycling back to first`);
+          return 0;
+        }
+      });
+    }
+  };
+
+  const preloadImages = (imageUrls: string[]) => {
+    const preloadStatus = new Array(imageUrls.length).fill(false);
+    setImagesPreloaded(preloadStatus);
+    
+    imageUrls.forEach((url, index) => {
+      const img = new Image();
+      img.onload = () => {
+        setImagesPreloaded(prev => {
+          const updated = [...prev];
+          updated[index] = true;
+          
+          // Start timer when first image loads (only once) - use setTimeout to avoid render cycle issues
+          if (index === 0 && roundType === "visual_rapid_fire" && !isTimerActive) {
+            console.log("Visual Rapid Fire: First image loaded, starting timer");
+            setTimeout(() => {
+              startTimer(60);
+              playTimerAudio();
+            }, 0);
+          }
+          
+          return updated;
+        });
+      };
+      img.onerror = () => {
+        console.error(`Failed to preload image ${index + 1}:`, url);
+      };
+      img.src = url;
+    });
+  };
+
   const handleNextQuestion = () => {
+    // Stop all audio when moving to next question
+    stopAllAudio();
+    
+    // Reset image index for visual rapid fire
+    if (roundType === "visual_rapid_fire") {
+      setCurrentImageIndex(0);
+    }
+    
     const nextIndex = currentQuestionIndex + 1;
 
     // Special handling for rapid fire - after 3 questions, move to next group
@@ -705,54 +860,39 @@ export default function ManageCompetitionPage() {
         title: "Rapid Fire Complete",
         description: "3 questions completed! Moving to next group.",
       });
-      
+
       // Show group summary modal to move to next group
       setShowGroupSummaryModal(true);
       return;
     }
 
-    // Check if we've reached the end of questions for this round
+    // Check if we've reached the end of questions for this round type
     if (nextIndex >= questions.length) {
-      const currentRound = getCurrentRound();
-      const nextRoundIndex = currentRoundIndex + 1;
-      const nextRound =
-        phaseStructure[currentPhase as keyof typeof phaseStructure][
-          nextRoundIndex
-        ];
+      const currentPhaseRounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
+      const currentRoundIndexInPhase = currentPhaseRounds.findIndex(
+        (r) => r.type === roundType
+      );
+      const nextRound = currentPhaseRounds[currentRoundIndexInPhase + 1];
 
       if (nextRound) {
         toast({
           title: "Round Complete",
-          description: `${currentRound.name} completed! Moving to ${nextRound.name}`,
+          description: `All ${roundType} questions completed! Moving to ${nextRound.type} round.`,
         });
 
-        // Reset question state before moving to next round
+        // Load questions for next round type
+        loadQuestions(nextRound.type, currentPhase);
+        setCurrentRoundIndex(currentRoundIndexInPhase + 1);
+      } else {
+        // All rounds completed for this phase
+        toast({
+          title: "Phase Complete",
+          description: `All rounds in ${currentPhase} phase completed!`,
+        });
         resetQuestion();
         setState("idle");
-
-        // Move to next round with a small delay to show the toast
-        setTimeout(() => {
-          setCurrentRoundIndex(nextRoundIndex);
-          setRoundType(nextRound.type as any);
-          loadQuestions(nextRound.type, currentPhase);
-
-          // Show instructions for the new round
-          toast({
-            title: `${nextRound.name} Started`,
-            description: `Press Q to begin the ${nextRound.name}`,
-          });
-        }, 1500);
-      } else {
-        // Check if this is the end of Phase 1 (buzzer round completion)
         if (currentPhase === "league" && roundType === "buzzer") {
           setShowGroupSummaryModal(true);
-        } else {
-          toast({
-            title: "Phase Complete",
-            description: `All rounds in ${currentPhase} phase completed!`,
-          });
-          resetQuestion();
-          setState("idle");
         }
       }
       return;
@@ -765,6 +905,11 @@ export default function ManageCompetitionPage() {
 
   const handleOptionSelect = (option: string, index: number) => {
     selectOption(index);
+    
+    // Stop the timer and all audio immediately when option is selected
+    stopTimer();
+    stopAllAudio();
+    
     const correctAnswer = currentQuestion?.correctAnswer;
     let isCorrect = false;
 
@@ -774,7 +919,11 @@ export default function ManageCompetitionPage() {
       isCorrect = option === correctAnswer;
     }
 
-    if (!isCorrect) {
+    // Play appropriate audio based on answer correctness
+    if (isCorrect) {
+      playRightAnswerAudio();
+    } else {
+      playWrongAnswerAudio();
       // Auto-show correct answer for wrong selection
       setTimeout(() => {
         toggleCorrectAnswer();
@@ -812,14 +961,16 @@ export default function ManageCompetitionPage() {
       });
 
       if (response.ok) {
-        // Update local state
-        updateTeamScore(teamId, points);
+        const updatedTeam = await response.json();
+        
+        // Set the exact score from database (not additive)
+        setTeamScore(teamId, updatedTeam.totalScore);
 
         // Also update the team's totalScore in the current group
         if (currentGroup) {
-          const updatedTeams = currentGroup.teams.map((team) =>
+          const updatedTeams = currentGroup.teams?.map((team) =>
             team._id === teamId
-              ? { ...team, totalScore: (team.totalScore || 0) + points }
+              ? { ...team, totalScore: updatedTeam.totalScore }
               : team
           );
           setCurrentGroup({ ...currentGroup, teams: updatedTeams });
@@ -827,11 +978,10 @@ export default function ManageCompetitionPage() {
 
         toast({
           title: "Points Awarded",
-          description: `${points > 0 ? "+" : ""}${points} points awarded`,
+          description: `${points > 0 ? "+" : ""}${points} points awarded. Total: ${updatedTeam.totalScore}`,
         });
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to award points");
+        throw new Error("Failed to update score");
       }
     } catch (error) {
       console.error("Error awarding points:", error);
@@ -866,7 +1016,46 @@ export default function ManageCompetitionPage() {
     }
   };
 
-  const handleBuzzerAnswer = (option: string, index: number) => {
+  const initializeSequenceComparison = () => {
+    if (!currentQuestion || !currentQuestion.options) return;
+    
+    // Get correct sequence from question
+    const correctSequence = Array.isArray(currentQuestion.correctAnswer) 
+      ? currentQuestion.correctAnswer 
+      : [currentQuestion.correctAnswer as number];
+    
+    // Set up comparison data
+    setSequenceComparison(correctSequence, sequenceAnswers);
+    resetSequenceReveal();
+    toggleSequenceModal();
+  };
+
+  const handleSequenceReveal = () => {
+    const maxSteps = Math.max(sequenceComparison.correct.length, sequenceComparison.selected.length);
+    
+    if (sequenceRevealStep < maxSteps) {
+      nextSequenceReveal();
+      
+      // Play sound based on current step comparison
+      if (sequenceRevealStep < sequenceComparison.correct.length && 
+          sequenceRevealStep < sequenceComparison.selected.length) {
+        const isCorrect = sequenceComparison.correct[sequenceRevealStep] === sequenceComparison.selected[sequenceRevealStep];
+        playSound(isCorrect ? 'correct' : 'wrong');
+      }
+    } else {
+      // All steps revealed, close modal and show answer
+      toggleSequenceModal();
+      setState("answer_shown");
+    }
+  };
+
+  const playSound = (type: 'correct' | 'wrong') => {
+    // Create audio element and play sound
+    const audio = new Audio(type === 'correct' ? '/right_answer.mp3' : '/wrong_answer.mp3');
+    audio.play().catch(console.error);
+  };
+
+  const handleBuzzerAnswer = async (option: string, index: number) => {
     selectOption(index);
 
     if (!currentQuestion) return;
@@ -882,24 +1071,11 @@ export default function ManageCompetitionPage() {
     }
 
     if (selectedTeam && isCorrect) {
-      // Award points for correct answer
-      updateTeamScore(selectedTeam, currentQuestion.points);
-      toast({
-        title: "Correct Answer!",
-        description: `${
-          competition?.teams?.find((t) => t._id === selectedTeam)?.name
-        } gets ${currentQuestion.points} points`,
-      });
+      // Award points for correct answer via API
+      await handleAwardPoints(selectedTeam, currentQuestion.points);
     } else if (selectedTeam && !isCorrect) {
-      // Deduct points for wrong answer in buzzer round
-      updateTeamScore(selectedTeam, -currentQuestion.points);
-      toast({
-        title: "Wrong Answer!",
-        description: `${
-          competition?.teams?.find((t) => t._id === selectedTeam)?.name
-        } loses ${currentQuestion.points} points`,
-        variant: "destructive",
-      });
+      // Deduct points for wrong answer in buzzer round via API
+      await handleAwardPoints(selectedTeam, -currentQuestion.points);
     }
   };
 
@@ -929,7 +1105,7 @@ export default function ManageCompetitionPage() {
       if (roundType === "rapid_fire") {
         return "Start 1 Min Timer (O)";
       } else if (roundType === "visual_rapid_fire") {
-        return "Start 1 Min Timer & Show Images (O)";
+        return "Start 1 Min Timer (O)";
       } else if (roundType === "mcq") {
         return "Show Options & Start Timer (O)";
       } else if (roundType === "media") {
@@ -944,10 +1120,14 @@ export default function ManageCompetitionPage() {
       if (roundType === "sequence") {
         return "Compare Sequence (A)";
       }
+      if (roundType === "visual_rapid_fire") {
+        return "Next Image (O) | Next Question (N)";
+      }
       if (roundType === "mcq" || roundType === "media") {
         return "Next Question (N)";
-      }
-      if (roundType === "rapid_fire") {
+      } else if (roundType === "buzzer") {
+        return "Next Question (N)";
+      } else if (roundType === "rapid_fire") {
         return "Next Question (N)";
       }
       return "Show Answer (A)";
@@ -964,8 +1144,13 @@ export default function ManageCompetitionPage() {
       handleOptionsToggle();
     } else if (currentState === "options_shown") {
       if (roundType === "sequence") {
-        toggleSequenceModal();
-      } else if (roundType === "mcq" || roundType === "media" || roundType === "rapid_fire") {
+        // Initialize sequence comparison and show modal
+        initializeSequenceComparison();
+      } else if (
+        roundType === "mcq" ||
+        roundType === "media" ||
+        roundType === "rapid_fire"
+      ) {
         handleNextQuestion();
       } else {
         handleAnswerToggle();
@@ -1086,6 +1271,13 @@ export default function ManageCompetitionPage() {
               </Button>
             </div>
 
+            <Button
+              onClick={() => setShowScoreModal(true)}
+              variant="outline"
+              className="mr-2"
+            >
+              Show Scores
+            </Button>
             <Button onClick={enterPresentationMode}>
               <Play className="w-4 h-4 mr-2" />
               Present
@@ -1169,7 +1361,7 @@ export default function ManageCompetitionPage() {
                   {currentState !== "idle" && (
                     <div className="mb-6">
                       {roundType !== "rapid_fire" && (
-                        <h3 className="text-xl font-semibold mb-4">
+                        <h3 className="text-xl font-semibold mb-4 quiz-font">
                           {currentQuestion.question}
                         </h3>
                       )}
@@ -1237,61 +1429,57 @@ export default function ManageCompetitionPage() {
                         (currentState === "options_shown" ||
                           (currentState === "timer_running" &&
                             isTimerActive)) && (
-                          <div className="grid grid-cols-2 gap-3 mb-4">
-                            {currentQuestion.options.map((option, index) => (
-                              <Button
-                                key={index}
-                                variant={
-                                  selectedOption === index
-                                    ? (
-                                        typeof currentQuestion.correctAnswer ===
-                                        "string"
-                                          ? option ===
-                                            currentQuestion.correctAnswer
-                                          : index ===
-                                            currentQuestion.correctAnswer
-                                      )
+                          <div className="mb-6">
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                              {currentQuestion.options.map((option, index) => (
+                                <Button
+                                  key={index}
+                                  variant={
+                                    (typeof currentQuestion.correctAnswer ===
+                                    "string"
+                                      ? option === currentQuestion.correctAnswer
+                                      : index ===
+                                        currentQuestion.correctAnswer) &&
+                                    (showCorrectAnswer ||
+                                      selectedOption !== null)
                                       ? "default"
-                                      : "destructive"
-                                    : showCorrectAnswer &&
-                                      (typeof currentQuestion.correctAnswer ===
-                                      "string"
-                                        ? option ===
-                                          currentQuestion.correctAnswer
-                                        : index ===
-                                          currentQuestion.correctAnswer)
-                                    ? "default"
-                                    : "outline"
-                                }
-                                className={`text-lg p-4 h-auto ${
-                                  selectedOption === index
-                                    ? (
-                                        typeof currentQuestion.correctAnswer ===
+                                      : selectedOption === index &&
+                                        !(typeof currentQuestion.correctAnswer ===
                                         "string"
                                           ? option ===
                                             currentQuestion.correctAnswer
                                           : index ===
-                                            currentQuestion.correctAnswer
-                                      )
+                                            currentQuestion.correctAnswer)
+                                      ? "destructive"
+                                      : "outline"
+                                  }
+                                  className={`text-lg p-4 h-auto ${
+                                    (typeof currentQuestion.correctAnswer ===
+                                    "string"
+                                      ? option === currentQuestion.correctAnswer
+                                      : index ===
+                                        currentQuestion.correctAnswer) &&
+                                    (showCorrectAnswer ||
+                                      selectedOption !== null)
                                       ? "bg-green-500 hover:bg-green-600 text-white"
-                                      : "bg-red-500 hover:bg-red-600 text-white"
-                                    : showCorrectAnswer &&
-                                      (typeof currentQuestion.correctAnswer ===
-                                      "string"
-                                        ? option ===
-                                          currentQuestion.correctAnswer
-                                        : index ===
-                                          currentQuestion.correctAnswer)
-                                    ? "bg-green-500 hover:bg-green-600 text-white"
-                                    : ""
-                                }`}
-                                onClick={() =>
-                                  handleOptionSelect(option, index)
-                                }
-                              >
-                                {String.fromCharCode(65 + index)}. {option}
-                              </Button>
-                            ))}
+                                      : selectedOption === index &&
+                                        !(typeof currentQuestion.correctAnswer ===
+                                        "string"
+                                          ? option ===
+                                            currentQuestion.correctAnswer
+                                          : index ===
+                                            currentQuestion.correctAnswer)
+                                      ? "bg-red-500 hover:bg-red-600 text-white"
+                                      : ""
+                                  }`}
+                                  onClick={() =>
+                                    handleOptionSelect(option, index)
+                                  }
+                                >
+                                  <span className="quiz-font">{String.fromCharCode(65 + index)}. {option}</span>
+                                </Button>
+                              ))}
+                            </div>
                           </div>
                         )}
 
@@ -1428,8 +1616,9 @@ export default function ManageCompetitionPage() {
                                 Rapid Fire Round - 1 Minute Timer
                               </p>
                               <p className="text-orange-700 mt-2">
-                                Questions asked orally by anchor. Timer started automatically.
-                                Award points by clicking team buttons below.
+                                Questions asked orally by anchor. Timer started
+                                automatically. Award points by clicking team
+                                buttons below.
                               </p>
                               <div className="mt-3">
                                 <div className="text-4xl font-mono font-bold text-orange-800">
@@ -1479,7 +1668,7 @@ export default function ManageCompetitionPage() {
                                       {sequenceAnswers.indexOf(index) + 1}
                                     </span>
                                   )}
-                                  {String.fromCharCode(65 + index)}. {option}
+                                  <span className="quiz-font">{String.fromCharCode(65 + index)}. {option}</span>
                                 </Button>
                               ))}
                             </div>
@@ -1502,13 +1691,29 @@ export default function ManageCompetitionPage() {
                         currentState === "options_shown" && (
                           <div className="text-center mb-4">
                             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                              <p className="text-green-800 font-semibold text-xl">
+                              <p className="text-green-800 font-semibold text-xl quiz-font">
                                 Visual Rapid Fire - 1 Minute
                               </p>
-                              <p className="text-green-700 mt-2">
-                                Images displayed above. Award points for correct
-                                answers.
+                              <p className="text-green-700 mt-2 quiz-font">
+                                Press 'O' to show next image. Image {currentImageIndex + 1} of {currentQuestion?.imageUrls?.length || 0}
                               </p>
+                              {currentQuestion?.imageUrls?.[currentImageIndex] && (
+                                <div className="mt-4 relative">
+                                  <img 
+                                    src={currentQuestion.imageUrls[currentImageIndex]} 
+                                    alt={`Visual Rapid Fire Image ${currentImageIndex + 1}`}
+                                    className="max-w-full max-h-96 mx-auto rounded-lg shadow-lg"
+                                    style={{ objectFit: 'contain' }}
+                                    onLoad={() => console.log(`Image ${currentImageIndex + 1} loaded`)}
+                                    onError={() => console.error(`Failed to load image ${currentImageIndex + 1}`)}
+                                  />
+                                  {!imagesPreloaded[currentImageIndex] && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+                                      <div className="text-gray-500">Loading...</div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1532,7 +1737,7 @@ export default function ManageCompetitionPage() {
                   )}
 
                   {/* Rapid Fire Timer Display for Admin */}
-                  {roundType === "rapid_fire" && currentState === "options_shown" && (
+                  {/* {roundType === "rapid_fire" && currentState === "options_shown" && (
                     <div className="text-center mb-6">
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
                         <h3 className="text-orange-800 font-semibold text-2xl mb-4">
@@ -1547,7 +1752,7 @@ export default function ManageCompetitionPage() {
                         </p>
                       </div>
                     </div>
-                  )}
+                  )} */}
 
                   {/* Dynamic Action Button */}
                   <div className="flex justify-center">
@@ -1734,6 +1939,109 @@ export default function ManageCompetitionPage() {
           </Card>
         )}
 
+        {/* Score Display Modal - Outside presentation for admin screen */}
+        {!isPresenting && (
+          <Dialog open={showScoreModal} onOpenChange={setShowScoreModal}>
+            <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center">
+                  <Trophy className="w-5 h-5 mr-2" />
+                  Current Scores -{" "}
+                  {currentPhase === "league"
+                    ? "League"
+                    : currentPhase === "semi_final"
+                    ? "Semi-Final"
+                    : "Final"}{" "}
+                  Phase
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-6">
+                {competition?.groups?.map((group) => (
+                  <div key={group._id} className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
+                      {group.name}
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse border border-gray-300">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="border border-gray-300 px-4 py-2 text-left">
+                              Rank
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left">
+                              Team Name
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left">
+                              School
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-center">
+                              Score
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.teams
+                            ?.map((team) => ({
+                              ...team,
+                              score:
+                                teamScores[team._id] || team.totalScore || 0,
+                            }))
+                            ?.sort((a, b) => b.score - a.score)
+                            ?.map((team, index) => (
+                              <tr
+                                key={team._id}
+                                className={`${
+                                  index === 0
+                                    ? "bg-yellow-50"
+                                    : index === 1
+                                    ? "bg-gray-50"
+                                    : index === 2
+                                    ? "bg-orange-50"
+                                    : "bg-white"
+                                } hover:bg-blue-50`}
+                              >
+                                <td className="border border-gray-300 px-4 py-2">
+                                  <span className="flex items-center">
+                                    <span className="text-xl mr-2">
+                                      {index === 0
+                                        ? "🥇"
+                                        : index === 1
+                                        ? "🥈"
+                                        : index === 2
+                                        ? "🥉"
+                                        : `${index + 1}.`}
+                                    </span>
+                                    {index + 1}
+                                  </span>
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 font-semibold">
+                                  {team.name}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-gray-600">
+                                  {team.school.name}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-center">
+                                  <span className="text-xl font-bold text-blue-600">
+                                    {team.score}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button onClick={() => setShowScoreModal(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
         {/* Group Summary Modal */}
         <Dialog
           open={showGroupSummaryModal}
@@ -1833,8 +2141,42 @@ export default function ManageCompetitionPage() {
         <div className="h-full flex flex-col">
           {/* Presentation Header */}
           <div className="bg-gray-900 p-4 flex justify-between items-center">
-            <h1 className="text-2xl font-bold">{competition.name}</h1>
+            <div className="flex items-center space-x-6">
+              <h1 className="text-2xl font-bold">{competition.name}</h1>
+              <div className="flex items-center space-x-4 text-lg">
+                <Badge variant="secondary" className="px-3 py-1">
+                  {currentPhase === "league"
+                    ? "League"
+                    : currentPhase === "semi_final"
+                    ? "Semi-Final"
+                    : "Final"}
+                </Badge>
+                <span className="text-gray-300">|</span>
+                <span className="text-white">{currentGroup?.name}</span>
+                {currentQuestion && (
+                  <>
+                    <span className="text-gray-300">|</span>
+                    <span className="text-white">
+                      Q{currentQuestionIndex + 1} - {roundType.toUpperCase()}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <img
+              src="/logo.png"
+              alt="Quiz Competition Logo"
+              className="w-32 h-24 mx-auto object-contain"
+            />
             <div className="flex items-center space-x-4">
+              <Button
+                onClick={() => setShowScoreModal(true)}
+                variant="outline"
+                size="sm"
+                className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700"
+              >
+                Show Scores
+              </Button>
               <div className="text-4xl font-mono">
                 {Math.floor(timeLeft / 60)}:
                 {(timeLeft % 60).toString().padStart(2, "0")}
@@ -1846,220 +2188,304 @@ export default function ManageCompetitionPage() {
           </div>
 
           {/* Presentation Content */}
-          <div className="flex-1 flex items-center justify-center p-8">
-            {/* Show content based on round type and state */}
-            {roundType === "rapid_fire" && currentState === "options_shown" ? (
+          <div className="flex-1 flex">
+            {/* Left Side - Timer */}
+            <div className="w-1/4 bg-gray-800 flex flex-col items-center justify-center p-8">
               <div className="text-center">
-                <h2 className="text-6xl font-bold mb-8 text-orange-400">
-                  Rapid Fire Round
-                </h2>
-                <div className="text-8xl font-mono font-bold text-white mb-4">
+                {/* Logo */}
+                <div className="mb-8"></div>
+
+                <div className="text-8xl font-mono font-bold text-cyan-400 mb-4">
                   {Math.floor(timeLeft / 60)}:
                   {(timeLeft % 60).toString().padStart(2, "0")}
                 </div>
-                <p className="text-2xl text-gray-300">
-                  Questions asked orally by anchor
-                </p>
+                <div className="text-2xl text-gray-300">Timer</div>
               </div>
-            ) : currentQuestion &&
-            (currentState === "question_shown" ||
-              currentState === "options_shown" ||
-              currentState === "timer_running" ||
-              currentState === "answer_shown") ? (
-              <div className="text-center max-w-4xl">
-                <h2 className="text-4xl font-bold mb-8">
-                  {currentQuestion.question}
-                </h2>
+            </div>
 
-                {/* Media removed from here - only show on O press */}
-                {/* Media Display */}
-                {currentQuestion?.mediaUrl &&
-                  currentState === "options_shown" && (
-                    <div className="mt-6 flex justify-center">
-                      {mediaLoading && (
-                        <div className="flex items-center space-x-2 text-blue-600">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                          <span>Loading media...</span>
-                        </div>
-                      )}
-                      {!mediaLoading && (
-                        <>
-                          {currentQuestion.mediaType === "image" && (
-                            <img
-                              src={currentQuestion.mediaUrl}
-                              alt="Question media"
-                              className="max-w-md max-h-64 object-contain rounded-lg shadow-lg"
-                              onLoad={() => {
-                                console.log(
-                                  "Image loaded, starting timer for",
-                                  roundType
-                                );
-                                if (currentState === "options_shown") {
-                                  startTimer(roundType === "media" ? 15 : 60);
-                                }
-                              }}
-                            />
-                          )}
-                          {currentQuestion.mediaType === "audio" && (
-                            <audio
-                              controls
-                              className="w-full max-w-md"
-                              onCanPlayThrough={() => {
-                                console.log(
-                                  "Audio loaded, starting timer for",
-                                  roundType
-                                );
-                                if (currentState === "options_shown") {
-                                  startTimer(15);
-                                }
-                              }}
-                            >
-                              <source
+            {/* Right Side - Main Content */}
+            <div className="flex-1 flex items-center justify-center p-8">
+              {/* Show content based on round type and state */}
+              {roundType === "rapid_fire" &&
+              currentState === "options_shown" ? (
+                <div className="text-center">
+                  <h2 className="text-6xl font-bold mb-8 text-orange-400">
+                    Rapid Fire Round
+                  </h2>
+                  <p className="text-2xl text-gray-300">
+                    Questions asked orally by anchor
+                  </p>
+                </div>
+              ) : currentQuestion &&
+                (currentState === "question_shown" ||
+                  currentState === "options_shown" ||
+                  currentState === "timer_running" ||
+                  currentState === "answer_shown") ? (
+                <div className="text-center max-w-4xl w-full">
+                  <h2 className="text-4xl font-bold mb-8 quiz-font">
+                    {currentQuestion.question}
+                  </h2>
+
+                  {/* Media removed from here - only show on O press */}
+                  {/* Media Display */}
+                  {currentQuestion?.mediaUrl &&
+                    currentState === "options_shown" && (
+                      <div className="mt-6 flex justify-center">
+                        {mediaLoading && (
+                          <div className="flex items-center space-x-2 text-blue-600">
+                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                            <span>Loading media...</span>
+                          </div>
+                        )}
+                        {!mediaLoading && (
+                          <>
+                            {currentQuestion.mediaType === "image" && (
+                              <img
                                 src={currentQuestion.mediaUrl}
-                                type="audio/mpeg"
+                                alt="Question media"
+                                className="max-w-md max-h-64 object-contain rounded-lg shadow-lg"
+                                onLoad={() => {
+                                  console.log(
+                                    "Image loaded, starting timer for",
+                                    roundType
+                                  );
+                                  if (currentState === "options_shown") {
+                                    startTimer(roundType === "media" ? 15 : 60);
+                                    playTimerAudio(); // Play timer sound
+                                  }
+                                }}
                               />
-                              Your browser does not support the audio element.
-                            </audio>
-                          )}
-                          {currentQuestion.mediaType === "video" && (
-                            <video
-                              controls
-                              className="max-w-md max-h-64 rounded-lg shadow-lg"
-                              onCanPlayThrough={() => {
-                                console.log(
-                                  "Video loaded, starting timer for",
-                                  roundType
-                                );
-                                if (currentState === "options_shown") {
-                                  startTimer(15);
-                                }
-                              }}
-                            >
-                              <source
-                                src={currentQuestion.mediaUrl}
-                                type="video/mp4"
-                              />
-                              Your browser does not support the video element.
-                            </video>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                {/* MCQ Options in presentation - Always show structure */}
-                {(roundType === "mcq" ||
-                  roundType === "media" ||
-                  roundType === "buzzer") &&
-                  currentQuestion?.options && (
-                    <div className="grid grid-cols-2 gap-6 text-2xl">
-                      {currentQuestion.options.map((option, index) => (
-                        <div
-                          key={index}
-                          className={`border-2 rounded-lg p-6 cursor-pointer transition-colors ${
-                            currentState === "options_shown" ||
-                            currentState === "timer_running"
-                              ? showCorrectAnswer &&
-                                (typeof currentQuestion.correctAnswer ===
-                                "string"
-                                  ? option === currentQuestion.correctAnswer
-                                  : index === currentQuestion.correctAnswer)
-                                ? "bg-green-600 border-green-400 text-white"
-                                : selectedOption === index
-                                ? (
-                                    typeof currentQuestion.correctAnswer ===
-                                    "string"
-                                      ? option === currentQuestion.correctAnswer
-                                      : index === currentQuestion.correctAnswer
-                                  )
-                                  ? "bg-green-600 border-green-400 text-white"
-                                  : "bg-red-600 border-red-400 text-white"
-                                : "border-gray-400"
-                              : "border-gray-300 bg-gray-50 text-gray-500"
-                          }`}
-                        >
-                          <span className="font-bold">
-                            {String.fromCharCode(65 + index)}.
-                          </span>{" "}
-                          {currentState === "options_shown" ||
-                          currentState === "timer_running"
-                            ? option
-                            : ""}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                {/* Buzzer Round Team Selection in Presentation */}
-                {roundType === "buzzer" &&
-                  (currentState === "question_shown" ||
-                    currentState === "options_shown") && (
-                    <div className="mt-8 space-y-6">
-                      <div className="bg-yellow-100 border-2 border-yellow-300 rounded-lg p-6 text-center">
-                        <h3 className="text-yellow-800 font-bold text-3xl mb-2">
-                          🔔 Buzzer Round
-                        </h3>
-                        <p className="text-yellow-700 text-xl">
-                          Select the team that buzzed first
-                        </p>
+                            )}
+                            {currentQuestion.mediaType === "audio" && (
+                              <audio
+                                controls
+                                className="w-full max-w-md"
+                                onCanPlayThrough={() => {
+                                  console.log(
+                                    "Audio loaded, starting timer for",
+                                    roundType
+                                  );
+                                  if (currentState === "options_shown") {
+                                    startTimer(15);
+                                    playTimerAudio(); // Play timer sound
+                                  }
+                                }}
+                              >
+                                <source
+                                  src={currentQuestion.mediaUrl}
+                                  type="audio/mpeg"
+                                />
+                                Your browser does not support the audio element.
+                              </audio>
+                            )}
+                            {currentQuestion.mediaType === "video" && (
+                              <video
+                                controls
+                                className="max-w-md max-h-64 rounded-lg shadow-lg"
+                                onCanPlayThrough={() => {
+                                  console.log(
+                                    "Video loaded, starting timer for",
+                                    roundType
+                                  );
+                                  if (currentState === "options_shown") {
+                                    startTimer(15);
+                                    playTimerAudio(); // Play timer sound
+                                  }
+                                }}
+                              >
+                                <source
+                                  src={currentQuestion.mediaUrl}
+                                  type="video/mp4"
+                                />
+                                Your browser does not support the video element.
+                              </video>
+                            )}
+                          </>
+                        )}
                       </div>
+                    )}
 
-                      <div className="grid grid-cols-3 gap-6">
-                        {currentGroup?.teams?.map((team) => (
+                  {/* MCQ Options in presentation - Always show structure */}
+                  {(roundType === "mcq" ||
+                    roundType === "media" ||
+                    roundType === "buzzer") &&
+                    currentQuestion?.options &&
+                    currentState === "options_shown" && (
+                      <div className="grid grid-cols-2 gap-6 text-2xl">
+                        {currentQuestion.options.map((option, index) => (
                           <div
-                            key={team._id}
-                            className={`border-2 rounded-lg p-6 text-center cursor-pointer transition-colors ${
-                              selectedTeam === team._id
-                                ? "bg-blue-500 border-blue-400 text-white"
-                                : "border-gray-400 hover:border-blue-400 bg-white"
+                            key={index}
+                            onClick={() => handleOptionSelect(option, index)}
+                            className={`border-2 rounded-lg p-6 cursor-pointer transition-colors ${
+                              (typeof currentQuestion.correctAnswer === "string"
+                                ? option === currentQuestion.correctAnswer
+                                : index === currentQuestion.correctAnswer) &&
+                              (showCorrectAnswer || selectedOption !== null)
+                                ? "bg-green-600 border-green-400 text-white"
+                                : selectedOption === index &&
+                                  !(typeof currentQuestion.correctAnswer ===
+                                  "string"
+                                    ? option === currentQuestion.correctAnswer
+                                    : index === currentQuestion.correctAnswer)
+                                ? "bg-red-600 border-red-400 text-white"
+                                : "border-gray-400 hover:border-blue-400 hover:bg-blue-50 hover:text-black"
                             }`}
                           >
-                            <div className="font-bold text-2xl">
-                              {team.name}
-                            </div>
-                            <div className="text-lg opacity-75 mt-2">
-                              Score: {teamScores[team._id] || 0}
-                            </div>
+                            <span className="font-bold">
+                              {String.fromCharCode(65 + index)}.
+                            </span>{" "}
+                            {option}
                           </div>
                         ))}
                       </div>
+                    )}
+
+                  {/* Buzzer Round Team Selection in Presentation */}
+                  {roundType === "buzzer" &&
+                    currentState === "options_shown" && (
+                      <div className="mt-8 space-y-6">
+                        <div className="bg-yellow-100 border-2 border-yellow-300 rounded-lg p-6 text-center">
+                          <h3 className="text-yellow-800 font-bold text-3xl mb-2">
+                            🔔 Buzzer Round
+                          </h3>
+                          <p className="text-yellow-700 text-xl">
+                            Select the team that buzzed first
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-6">
+                          {currentGroup?.teams?.map((team) => (
+                            <div
+                              key={team._id}
+                              onClick={() => setSelectedTeam(team._id)}
+                              className={`border-2 rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                                selectedTeam === team._id
+                                  ? "bg-blue-500 border-blue-400 text-white"
+                                  : "border-gray-400 hover:border-blue-400 bg-white"
+                              }`}
+                            >
+                              <div className="font-bold text-2xl">
+                                {team.name}
+                              </div>
+                              <div className="text-lg opacity-75 mt-2">
+                                Score: {teamScores[team._id] || 0}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Answer Options after team selection */}
+                        {selectedTeam && currentQuestion.options && (
+                          <div className="mt-6">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-center">
+                              <p className="text-blue-800 font-medium text-xl">
+                                Selected Team:{" "}
+                                {
+                                  currentGroup?.teams?.find(
+                                    (t) => t._id === selectedTeam
+                                  )?.name
+                                }
+                              </p>
+                              <p className="text-blue-700">
+                                Now select their answer:
+                              </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                              {currentQuestion.options.map((option, index) => (
+                                <div
+                                  key={index}
+                                  onClick={() =>
+                                    handleBuzzerAnswer(option, index)
+                                  }
+                                  className={`border-2 rounded-lg p-4 cursor-pointer transition-colors text-xl ${
+                                    selectedOption === index
+                                      ? (
+                                          typeof currentQuestion.correctAnswer ===
+                                          "string"
+                                            ? option ===
+                                              currentQuestion.correctAnswer
+                                            : index ===
+                                              currentQuestion.correctAnswer
+                                        )
+                                        ? "bg-green-500 border-green-400 text-white"
+                                        : "bg-red-500 border-red-400 text-white"
+                                      : "border-gray-400 hover:border-blue-400 hover:bg-blue-50 hover:text-black"
+                                  }`}
+                                >
+                                  <span className="quiz-font">{String.fromCharCode(65 + index)}. {option}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                  {/* Answer in presentation */}
+                  {currentState === "answer_shown" && currentQuestion && (
+                    <div className="bg-green-600 border-2 border-green-400 rounded-lg p-8 text-3xl">
+                      <h3 className="font-bold mb-4 quiz-font">Correct Answer:</h3>
+                      <p className="quiz-font">
+                        {typeof currentQuestion.correctAnswer === "string"
+                          ? currentQuestion.correctAnswer
+                          : currentQuestion.options?.[
+                              currentQuestion.correctAnswer as number
+                            ]}
+                      </p>
                     </div>
                   )}
-
-                {/* Answer in presentation */}
-                {currentState === "answer_shown" && currentQuestion && (
-                  <div className="bg-green-600 border-2 border-green-400 rounded-lg p-8 text-3xl">
-                    <h3 className="font-bold mb-4">Correct Answer:</h3>
-                    <p>
-                      {typeof currentQuestion.correctAnswer === "string"
-                        ? currentQuestion.correctAnswer
-                        : currentQuestion.options?.[
-                            currentQuestion.correctAnswer as number
-                          ]}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center">
-                <h2 className="text-6xl font-bold mb-4">Ready</h2>
-                <p className="text-2xl text-gray-400">
-                  Press Q to show question
-                </p>
-              </div>
-            )}
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h2 className="text-6xl font-bold mb-4">Ready</h2>
+                  <p className="text-2xl text-gray-400">
+                    Press Q to show question
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Team Scores in presentation */}
+          {/* Team Scores and Controls in presentation */}
           {currentGroup && (
             <div className="bg-gray-900 p-4">
-              <div className="flex justify-around">
+              <div className="flex justify-around items-center">
                 {currentGroup.teams.map((team) => (
                   <div key={team._id} className="text-center">
                     <h3 className="text-xl font-bold">{team.name}</h3>
-                    <p className="text-3xl font-mono font-bold">
+                    <p className="text-3xl font-mono font-bold mb-2">
                       {teamScores[team._id] || 0}
                     </p>
+                    {/* Quick scoring buttons in presentation */}
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          handleAwardPoints(
+                            team._id,
+                            currentQuestion?.points || 10
+                          )
+                        }
+                        disabled={!currentQuestion}
+                        className="text-xs px-2 py-1"
+                      >
+                        +{currentQuestion?.points || 10}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() =>
+                          handleAwardPoints(
+                            team._id,
+                            -(currentQuestion?.points || 10)
+                          )
+                        }
+                        disabled={!currentQuestion}
+                        className="text-xs px-2 py-1"
+                      >
+                        -{currentQuestion?.points || 10}
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -2070,48 +2496,237 @@ export default function ManageCompetitionPage() {
           <div className="absolute bottom-4 left-4 text-sm text-gray-400">
             Q: Question | O: Options | A: Answer | T: Timer
           </div>
+
+          {/* Score Display Modal - Inside presentation for presentation screen */}
+          {showScoreModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[60] p-4">
+              <div className="bg-white rounded-lg w-full max-w-7xl max-h-[95vh] overflow-y-auto">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold flex items-center">
+                      <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
+                      Current Scores -{" "}
+                      {currentPhase === "league"
+                        ? "League"
+                        : currentPhase === "semi_final"
+                        ? "Semi-Final"
+                        : "Final"}{" "}
+                      Phase
+                    </h2>
+                    <Button
+                      onClick={() => setShowScoreModal(false)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Close
+                    </Button>
+                  </div>
+
+                  <div className="space-y-8">
+                    {competition?.groups?.map((group) => (
+                      <div key={group._id} className="space-y-4">
+                        <h3 className="text-xl font-semibold text-gray-800 border-b-2 border-blue-500 pb-2">
+                          {group.name}
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse border-2 border-gray-400 text-lg">
+                            <thead>
+                              <tr className="bg-blue-600 text-white">
+                                <th className="border border-gray-400 px-6 py-4 text-left font-bold">
+                                  Sr No.
+                                </th>
+                                <th className="border border-gray-400 px-6 py-4 text-left font-bold">
+                                  Team Name
+                                </th>
+                                <th className="border border-gray-400 px-6 py-4 text-left font-bold">
+                                  School
+                                </th>
+                                <th className="border border-gray-400 px-6 py-4 text-center font-bold">
+                                  Score
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.teams
+                                ?.map((team) => ({
+                                  ...team,
+                                  score:
+                                    teamScores[team._id] ||
+                                    team.totalScore ||
+                                    0,
+                                }))
+                                ?.sort((a, b) => b.score - a.score)
+                                ?.map((team, index) => (
+                                  <tr
+                                    key={team._id}
+                                    className={`${
+                                      index === 0
+                                        ? "bg-yellow-100 border-yellow-400"
+                                        : index === 1
+                                        ? "bg-gray-100 border-gray-400"
+                                        : index === 2
+                                        ? "bg-orange-100 border-orange-400"
+                                        : "bg-white"
+                                    } hover:bg-blue-50 transition-colors`}
+                                  >
+                                    <td className="border border-gray-400 px-6 py-4">
+                                      <span className="flex items-center text-lg">
+                                        <span className="text-2xl mr-3">
+                                          {index === 0
+                                            ? "🥇"
+                                            : index === 1
+                                            ? "🥈"
+                                            : index === 2
+                                            ? "🥉"
+                                            : ""}
+                                        </span>
+                                        <span className="font-bold text-black">
+                                          {index + 1}
+                                        </span>
+                                      </span>
+                                    </td>
+                                    <td className="border border-gray-400 px-6 py-4 font-bold text-lg text-black">
+                                      {team.name}
+                                    </td>
+                                    <td className="border border-gray-400 px-6 py-4 text-black">
+                                      {team.school.name}
+                                    </td>
+                                    <td className="border border-gray-400 px-6 py-4 text-center">
+                                      <span className="text-2xl font-bold text-blue-600">
+                                        {team.score}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Sequence Modal */}
       {showSequenceModal && (
         <Dialog open={showSequenceModal} onOpenChange={toggleSequenceModal}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
-              <DialogTitle>Sequence Answers Comparison</DialogTitle>
+              <DialogTitle>Sequence Comparison - Press 'A' to reveal step by step</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              {sequenceAnswers.map((answerIndex, idx) => {
-                const option = currentQuestion?.options?.[answerIndex];
-                const isCorrect =
-                  answerIndex === (currentQuestion?.correctAnswer as number);
+            <div className="grid grid-cols-2 gap-6">
+              {/* Left side - Correct Sequence */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-green-600">Correct Sequence</h3>
+                {sequenceComparison.correct.map((correctIndex, idx) => {
+                  const option = currentQuestion?.options?.[correctIndex];
+                  const isRevealed = idx < sequenceRevealStep;
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded border transition-all duration-500 ${
+                        isRevealed
+                          ? "bg-green-50 border-green-200 opacity-100"
+                          : "bg-gray-100 border-gray-200 opacity-50"
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-green-600">
+                          {idx + 1}.
+                        </span>
+                        <span className={isRevealed ? "text-black" : "text-gray-400"}>
+                          {isRevealed 
+                            ? `${String.fromCharCode(65 + correctIndex)}. ${option}`
+                            : "???"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-                return (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-4 border rounded"
-                  >
-                    <div>
-                      <h4 className="font-semibold">Answer {idx + 1}</h4>
-                      <p className="text-gray-600">{option}</p>
+              {/* Right side - Selected Sequence */}
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-blue-600">Team's Answer</h3>
+                {sequenceComparison.selected.map((selectedIndex, idx) => {
+                  const option = currentQuestion?.options?.[selectedIndex];
+                  const isRevealed = idx < sequenceRevealStep;
+                  const isCorrect = idx < sequenceComparison.correct.length && 
+                                   selectedIndex === sequenceComparison.correct[idx];
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded border transition-all duration-500 ${
+                        isRevealed
+                          ? isCorrect
+                            ? "bg-green-50 border-green-200"
+                            : "bg-red-50 border-red-200"
+                          : "bg-gray-100 border-gray-200 opacity-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className={`font-bold ${
+                            isRevealed 
+                              ? isCorrect ? "text-green-600" : "text-red-600"
+                              : "text-gray-400"
+                          }`}>
+                            {idx + 1}.
+                          </span>
+                          <span className={isRevealed ? "text-black" : "text-gray-400"}>
+                            {isRevealed 
+                              ? `${String.fromCharCode(65 + selectedIndex)}. ${option}`
+                              : "???"}
+                          </span>
+                        </div>
+                        {isRevealed && (
+                          <Badge variant={isCorrect ? "default" : "destructive"}>
+                            {isCorrect ? "✓" : "✗"}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      {isCorrect ? (
-                        <Check className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <X className="w-5 h-5 text-red-500" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
+            
+            <div className="text-center mt-4">
+              <p className="text-sm text-gray-600">
+                Step {sequenceRevealStep} of {Math.max(sequenceComparison.correct.length, sequenceComparison.selected.length)} revealed
+              </p>
+              {sequenceRevealStep >= Math.max(sequenceComparison.correct.length, sequenceComparison.selected.length) && (
+                <p className="text-lg font-semibold mt-2">
+                  All steps revealed! Press 'A' to continue.
+                </p>
+              )}
+            </div>
+
             <DialogFooter>
-              <Button onClick={toggleSequenceModal}>Close</Button>
+              <Button onClick={toggleSequenceModal} variant="outline">Close</Button>
+              <Button onClick={handleSequenceReveal}>
+                Reveal Next Step
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
+
+
+      <audio ref={timerAudioRef} preload="auto">
+        <source src="/15s_timer.mp3" type="audio/mpeg" />
+      </audio>
+      <audio ref={rightAnswerAudioRef} preload="auto">
+        <source src="/right_answer.mp3" type="audio/mpeg" />
+      </audio>
+      <audio ref={wrongAnswerAudioRef} preload="auto">
+        <source src="/wrong_answer.mp3" type="audio/mpeg" />
+      </audio>
     </div>
   );
 }

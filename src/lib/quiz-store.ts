@@ -23,6 +23,7 @@ export interface Question {
   mediaType?: 'image' | 'audio' | 'video';
   points: number;
   phase: 'league' | 'semi_final' | 'final';
+  imageUrls?: string[];
 }
 
 export interface Team {
@@ -63,6 +64,8 @@ export interface QuizStore {
   // Sequence specific
   sequenceAnswers: number[];
   showSequenceModal: boolean;
+  sequenceRevealStep: number;
+  sequenceComparison: { correct: number[], selected: number[] };
   
   // Presentation mode
   isPresenting: boolean;
@@ -82,6 +85,7 @@ export interface QuizStore {
   // Team actions
   setTeams: (teams: Team[]) => void;
   updateTeamScore: (teamId: string, points: number) => void;
+  setTeamScore: (teamId: string, score: number) => void;
   selectTeam: (teamId: string) => void;
   awardPoints: (teamId: string) => void;
   
@@ -98,6 +102,9 @@ export interface QuizStore {
   addSequenceAnswer: (optionIndex: number) => void;
   clearSequenceAnswers: () => void;
   toggleSequenceModal: () => void;
+  nextSequenceReveal: () => void;
+  resetSequenceReveal: () => void;
+  setSequenceComparison: (correct: number[], selected: number[]) => void;
   
   // Presentation actions
   setPresenting: (presenting: boolean) => void;
@@ -138,6 +145,8 @@ export const useQuizStore = create<QuizStore>((set, get) => ({
   // Sequence initial state
   sequenceAnswers: [],
   showSequenceModal: false,
+  sequenceRevealStep: 0,
+  sequenceComparison: { correct: [], selected: [] },
   
   // Presentation initial state
   isPresenting: false,
@@ -203,6 +212,16 @@ export const useQuizStore = create<QuizStore>((set, get) => ({
       teamScores: {
         ...teamScores,
         [teamId]: (teamScores[teamId] || 0) + points
+      }
+    });
+  },
+
+  setTeamScore: (teamId: string, score: number) => {
+    const { teamScores } = get();
+    set({
+      teamScores: {
+        ...teamScores,
+        [teamId]: score
       }
     });
   },
@@ -279,6 +298,19 @@ export const useQuizStore = create<QuizStore>((set, get) => ({
     const { showSequenceModal } = get();
     set({ showSequenceModal: !showSequenceModal });
   },
+
+  nextSequenceReveal: () => {
+    const { sequenceRevealStep } = get();
+    set({ sequenceRevealStep: sequenceRevealStep + 1 });
+  },
+
+  resetSequenceReveal: () => {
+    set({ sequenceRevealStep: 0 });
+  },
+
+  setSequenceComparison: (correct: number[], selected: number[]) => {
+    set({ sequenceComparison: { correct, selected } });
+  },
   
   // Presentation actions
   setPresenting: (presenting) => set({ isPresenting: presenting }),
@@ -295,6 +327,8 @@ export const useQuizStore = create<QuizStore>((set, get) => ({
     currentBuzzerTeam: null,
     sequenceAnswers: [],
     showSequenceModal: false,
+    sequenceRevealStep: 0,
+    sequenceComparison: { correct: [], selected: [] },
     timeLeft: 0,
     isTimerActive: false
   }),

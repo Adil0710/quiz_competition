@@ -165,13 +165,14 @@ const questions = [
     updatedAt: new Date()
   })),
 
-  // Phase 3 (Final) - Visual Rapid Fire Questions (75 total)
-  ...Array.from({ length: 75 }, (_, i) => ({
-    question: `ویژول ریپڈ فائر سوال ${i + 1}: فوری بصری شناخت`,
+  // Phase 3 (Final) - Visual Rapid Fire Questions (3 questions with 20 images each)
+  ...Array.from({ length: 3 }, (_, i) => ({
+    question: `ویژول ریپڈ فائر سوال ${i + 1}: 20 تصاویر کی فوری شناخت`,
     type: 'visual_rapid_fire',
-    mediaUrl: `https://picsum.photos/300/200?random=${i + 61}`,
-    mediaType: 'image',
-    correctAnswer: `بصری جواب ${i + 1}`,
+    imageUrls: Array.from({ length: 20 }, (_, imgIndex) => 
+      `https://picsum.photos/400/300?random=${(i * 20) + imgIndex + 100}`
+    ),
+    correctAnswer: `بصری جواب سیٹ ${i + 1}`,
     difficulty: 'medium',
     category: 'بصری',
     points: 10,

@@ -219,6 +219,10 @@ export default function CompetitionDetailsPage() {
           description: "Top 3 teams advanced to final phase"
         });
         fetchCompetition();
+      } else if (data.requiresManualSelection) {
+        // Handle tie situation for final
+        setTieResolutionData(data);
+        setSelectedTiedTeams([]);
       } else {
         toast({
           title: "Error",
@@ -836,14 +840,20 @@ export default function CompetitionDetailsPage() {
                   try {
                     setAdvancingSemifinal(true);
                     const allSelectedTeams = [
-                      ...tieResolutionData.currentTop8.map((t: any) => t._id),
+                      ...(tieResolutionData.currentTop8 || tieResolutionData.currentTop2 || []).map((t: any) => t._id),
                       ...selectedTiedTeams
                     ];
                     
                     console.log('Sending teams to API:', allSelectedTeams.length);
                     console.log('Team IDs:', allSelectedTeams);
 
-                    const response = await fetch(`/api/competitions/${competitionId}/advance-semifinal-manual`, {
+                    // Determine which API endpoint to use based on tie resolution data
+                    const isForFinal = tieResolutionData.availableSlots === 3 || tieResolutionData.currentTop2;
+                    const apiEndpoint = isForFinal 
+                      ? `/api/competitions/${competitionId}/advance-final-manual`
+                      : `/api/competitions/${competitionId}/advance-semifinal-manual`;
+
+                    const response = await fetch(apiEndpoint, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ selectedTeamIds: allSelectedTeams })
@@ -853,7 +863,9 @@ export default function CompetitionDetailsPage() {
                     if (data.success) {
                       toast({
                         title: "Success",
-                        description: "Teams advanced to semifinal phase"
+                        description: isForFinal 
+                          ? "Teams advanced to final phase" 
+                          : "Teams advanced to semifinal phase"
                       });
                       setTieResolutionData(null);
                       setSelectedTiedTeams([]);

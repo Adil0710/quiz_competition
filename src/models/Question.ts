@@ -7,6 +7,7 @@ export interface IQuestion extends Document {
   correctAnswer?: string | number;
   mediaUrl?: string;
   mediaType?: 'image' | 'audio' | 'video';
+  imageUrls?: string[]; // Array of images for visual rapid fire
   difficulty: 'easy' | 'medium' | 'hard';
   category: string;
   points: number;
@@ -43,6 +44,10 @@ const QuestionSchema: Schema = new Schema({
     type: String,
     enum: ['image', 'audio', 'video']
   },
+  imageUrls: [{
+    type: String,
+    trim: true
+  }],
   difficulty: {
     type: String,
     enum: ['easy', 'medium', 'hard'],
