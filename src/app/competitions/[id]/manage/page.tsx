@@ -893,19 +893,15 @@ export default function ManageCompetitionPage() {
               </SelectContent>
             </Select>
             
-            {/* Phase Management */}
+            {/* Phase Management - Auto-detected */}
             <div className="flex items-center space-x-2">
               <span className="text-sm font-medium">Phase:</span>
-              <Select value={currentPhase} onValueChange={changePhase}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="league">League</SelectItem>
-                  <SelectItem value="semi_final">Semi-Final</SelectItem>
-                  <SelectItem value="final">Final</SelectItem>
-                </SelectContent>
-              </Select>
+              <Badge variant="secondary" className="px-3 py-1">
+                {currentPhase === 'league' ? 'League' : 
+                 currentPhase === 'semi_final' ? 'Semi-Final' : 
+                 'Final'}
+              </Badge>
+              <span className="text-xs text-gray-500">(Auto-detected from competition stage)</span>
             </div>
 
             {/* Round Management */}
