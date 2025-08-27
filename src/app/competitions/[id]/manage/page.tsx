@@ -557,7 +557,11 @@ export default function ManageCompetitionPage() {
     );
 
     if (currentState === "idle") {
-      if (roundType === "buzzer") {
+      if (roundType === "rapid_fire") {
+        // For rapid fire, skip question display and go directly to timer
+        setState("options_shown");
+        startTimer(60); // Start 1 minute timer immediately
+      } else if (roundType === "buzzer") {
         setState("question_shown"); // For buzzer, show question AND team selection
       } else {
         setState("question_shown"); // For other rounds, just show question
@@ -905,6 +909,9 @@ export default function ManageCompetitionPage() {
 
   const getDynamicButtonText = () => {
     if (currentState === "idle") {
+      if (roundType === "rapid_fire") {
+        return "Start Timer (Q)";
+      }
       return "Show Question (Q)";
     } else if (currentState === "question_shown") {
       if (roundType === "rapid_fire") {
@@ -928,6 +935,9 @@ export default function ManageCompetitionPage() {
       if (roundType === "mcq" || roundType === "media") {
         return "Next Question (N)";
       }
+      if (roundType === "rapid_fire") {
+        return "Next Question (N)";
+      }
       return "Show Answer (A)";
     } else if (currentState === "answer_shown") {
       return "Next Question";
@@ -943,7 +953,7 @@ export default function ManageCompetitionPage() {
     } else if (currentState === "options_shown") {
       if (roundType === "sequence") {
         toggleSequenceModal();
-      } else if (roundType === "mcq" || roundType === "media") {
+      } else if (roundType === "mcq" || roundType === "media" || roundType === "rapid_fire") {
         handleNextQuestion();
       } else {
         handleAnswerToggle();
@@ -1143,8 +1153,8 @@ export default function ManageCompetitionPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Question Display */}
-                  {currentState !== "idle" && (
+                  {/* Question Display - Hide for rapid fire */}
+                  {currentState !== "idle" && roundType !== "rapid_fire" && (
                     <div className="mb-6">
                       <h3 className="text-xl font-semibold mb-4">
                         {currentQuestion.question}
@@ -1507,6 +1517,24 @@ export default function ManageCompetitionPage() {
                     </div>
                   )}
 
+                  {/* Rapid Fire Timer Display for Admin */}
+                  {roundType === "rapid_fire" && currentState === "options_shown" && (
+                    <div className="text-center mb-6">
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-6">
+                        <h3 className="text-orange-800 font-semibold text-2xl mb-4">
+                          Rapid Fire Round - Question {currentQuestionIndex + 1} of 3
+                        </h3>
+                        <div className="text-6xl font-mono font-bold text-orange-800 mb-4">
+                          {Math.floor(timeLeft / 60)}:
+                          {(timeLeft % 60).toString().padStart(2, "0")}
+                        </div>
+                        <p className="text-orange-700 text-lg">
+                          Questions asked orally by anchor. Award points using team buttons below.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Dynamic Action Button */}
                   <div className="flex justify-center">
                     <Button
@@ -1805,31 +1833,29 @@ export default function ManageCompetitionPage() {
 
           {/* Presentation Content */}
           <div className="flex-1 flex items-center justify-center p-8">
-            {currentQuestion &&
+            {/* Show content based on round type and state */}
+            {roundType === "rapid_fire" && currentState === "options_shown" ? (
+              <div className="text-center">
+                <h2 className="text-6xl font-bold mb-8 text-orange-400">
+                  Rapid Fire Round
+                </h2>
+                <div className="text-8xl font-mono font-bold text-white mb-4">
+                  {Math.floor(timeLeft / 60)}:
+                  {(timeLeft % 60).toString().padStart(2, "0")}
+                </div>
+                <p className="text-2xl text-gray-300">
+                  Questions asked orally by anchor
+                </p>
+              </div>
+            ) : currentQuestion &&
             (currentState === "question_shown" ||
               currentState === "options_shown" ||
               currentState === "timer_running" ||
               currentState === "answer_shown") ? (
               <div className="text-center max-w-4xl">
-                {/* For rapid fire, don't show question - only show timer */}
-                {roundType === "rapid_fire" && currentState === "options_shown" ? (
-                  <div className="text-center">
-                    <h2 className="text-6xl font-bold mb-8 text-orange-400">
-                      Rapid Fire Round
-                    </h2>
-                    <div className="text-8xl font-mono font-bold text-white mb-4">
-                      {Math.floor(timeLeft / 60)}:
-                      {(timeLeft % 60).toString().padStart(2, "0")}
-                    </div>
-                    <p className="text-2xl text-gray-300">
-                      Questions asked orally by anchor
-                    </p>
-                  </div>
-                ) : (
-                  <h2 className="text-4xl font-bold mb-8">
-                    {currentQuestion.question}
-                  </h2>
-                )}
+                <h2 className="text-4xl font-bold mb-8">
+                  {currentQuestion.question}
+                </h2>
 
                 {/* Media removed from here - only show on O press */}
                 {/* Media Display */}
