@@ -266,6 +266,16 @@ export default function ManageCompetitionPage() {
       const data = await response.json();
       if (data.success) {
         setCompetition(data.data);
+        
+        // Automatically set phase based on competition's current stage
+        const stageToPhaseMap = {
+          'group': 'league',
+          'semi_final': 'semi_final', 
+          'final': 'final'
+        };
+        const mappedPhase = stageToPhaseMap[data.data.currentStage as keyof typeof stageToPhaseMap] || 'league';
+        setCurrentPhase(mappedPhase);
+        
         if (data.data.groups.length > 0) {
           setCurrentGroup(data.data.groups[0]);
           initializeTeamScores(data.data.groups[0].teams);
