@@ -384,7 +384,7 @@ export default function ManageCompetitionPage() {
     } else if (type === "buzzer") {
       return 5; // 5 questions per group (fixed)
     } else if (type === "rapid_fire") {
-      return teamCount * 20; // 20 questions per team
+      return 3; // Only 3 questions per group (one per team)
     } else if (type === "sequence") {
       return teamCount * 2; // 2 questions per team
     } else if (type === "visual_rapid_fire") {
@@ -699,6 +699,18 @@ export default function ManageCompetitionPage() {
   const handleNextQuestion = () => {
     const nextIndex = currentQuestionIndex + 1;
 
+    // Special handling for rapid fire - after 3 questions, move to next group
+    if (roundType === "rapid_fire" && nextIndex >= 3) {
+      toast({
+        title: "Rapid Fire Complete",
+        description: "3 questions completed! Moving to next group.",
+      });
+      
+      // Show group summary modal to move to next group
+      setShowGroupSummaryModal(true);
+      return;
+    }
+
     // Check if we've reached the end of questions for this round
     if (nextIndex >= questions.length) {
       const currentRound = getCurrentRound();
@@ -711,7 +723,7 @@ export default function ManageCompetitionPage() {
       if (nextRound) {
         toast({
           title: "Round Complete",
-          description: `${currentRound.name} completed! Moving to ${nextRound.name}...`,
+          description: `${currentRound.name} completed! Moving to ${nextRound.name}`,
         });
 
         // Reset question state before moving to next round
@@ -727,7 +739,7 @@ export default function ManageCompetitionPage() {
           // Show instructions for the new round
           toast({
             title: `${nextRound.name} Started`,
-            description: `Press Q to show the first question`,
+            description: `Press Q to begin the ${nextRound.name}`,
           });
         }, 1500);
       } else {
@@ -1154,11 +1166,13 @@ export default function ManageCompetitionPage() {
                 </CardHeader>
                 <CardContent>
                   {/* Question Display - Hide for rapid fire */}
-                  {currentState !== "idle" && roundType !== "rapid_fire" && (
+                  {currentState !== "idle" && (
                     <div className="mb-6">
-                      <h3 className="text-xl font-semibold mb-4">
-                        {currentQuestion.question}
-                      </h3>
+                      {roundType !== "rapid_fire" && (
+                        <h3 className="text-xl font-semibold mb-4">
+                          {currentQuestion.question}
+                        </h3>
+                      )}
 
                       {/* Media Display - Only show when options are shown for media rounds */}
                       {currentQuestion.mediaUrl &&
