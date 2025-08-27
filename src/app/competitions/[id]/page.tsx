@@ -44,6 +44,10 @@ export default function CompetitionDetailsPage() {
   const [resettingScores, setResettingScores] = useState(false);
   const [creatingMode, setCreatingMode] = useState<null | 'auto' | 'manual'>(null);
   const [navManualLoading, setNavManualLoading] = useState(false);
+  const [advancingSemifinal, setAdvancingSemifinal] = useState(false);
+  const [advancingFinal, setAdvancingFinal] = useState(false);
+  const [tieResolutionData, setTieResolutionData] = useState<any>(null);
+  const [selectedTiedTeams, setSelectedTiedTeams] = useState<string[]>([]);
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -64,7 +68,9 @@ export default function CompetitionDetailsPage() {
 
   const fetchCompetition = async () => {
     try {
-      const response = await fetch(`/api/competitions/${competitionId}`);
+      setLoading(true);
+      // Add cache busting parameter to ensure fresh data
+      const response = await fetch(`/api/competitions/${competitionId}?t=${Date.now()}`);
       const data = await response.json();
       if (data.success) {
         setCompetition(data.data);
@@ -88,7 +94,7 @@ export default function CompetitionDetailsPage() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch competition details",
+        description: "Failed to fetch competition",
         variant: "destructive"
       });
     } finally {
@@ -158,6 +164,76 @@ export default function CompetitionDetailsPage() {
       toast({ title: 'Error', description: 'Failed to delete competition', variant: 'destructive' });
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleAdvanceToSemifinal = async () => {
+    try {
+      setAdvancingSemifinal(true);
+      const response = await fetch(`/api/competitions/${competitionId}/advance-semifinal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: "Top 9 teams advanced to semifinal phase"
+        });
+        fetchCompetition();
+      } else if (data.requiresManualSelection) {
+        // Show tie resolution dialog
+        setTieResolutionData(data);
+        setSelectedTiedTeams([]);
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to advance to semifinal",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to advance to semifinal",
+        variant: "destructive"
+      });
+    } finally {
+      setAdvancingSemifinal(false);
+    }
+  };
+
+  const handleAdvanceToFinal = async () => {
+    try {
+      setAdvancingFinal(true);
+      const response = await fetch(`/api/competitions/${competitionId}/advance-final`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: "Top 3 teams advanced to final phase"
+        });
+        fetchCompetition();
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to advance to final",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to advance to final",
+        variant: "destructive"
+      });
+    } finally {
+      setAdvancingFinal(false);
     }
   };
 
@@ -500,8 +576,40 @@ export default function CompetitionDetailsPage() {
         <TabsContent value="teams" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Participating Teams</CardTitle>
-              <CardDescription>All teams registered for this competition</CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>
+                    {competition.currentStage === 'group' ? 'Participating Teams' : 
+                     competition.currentStage === 'semi_final' ? 'Semifinal Teams' : 
+                     'Final Teams'}
+                  </CardTitle>
+                  <CardDescription>
+                    {competition.currentStage === 'group' ? 'All teams registered for this competition (sorted by total score)' : 
+                     competition.currentStage === 'semi_final' ? 'Teams competing in semifinal phase (sorted by total score)' : 
+                     'Teams competing in final phase (sorted by total score)'}
+                  </CardDescription>
+                </div>
+                {competition.currentStage === 'group' && competition.teams.length >= 9 && (
+                  <Button 
+                    onClick={handleAdvanceToSemifinal}
+                    disabled={advancingSemifinal}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {advancingSemifinal ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                    Advance Top 9 to Semifinal
+                  </Button>
+                )}
+                {competition.currentStage === 'semi_final' && competition.teams.length >= 3 && (
+                  <Button 
+                    onClick={handleAdvanceToFinal}
+                    disabled={advancingFinal}
+                    className="bg-purple-600 hover:bg-purple-700"
+                  >
+                    {advancingFinal ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null}
+                    Advance Top 3 to Final
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {competition.teams.length === 0 ? (
@@ -514,22 +622,33 @@ export default function CompetitionDetailsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Rank</TableHead>
                       <TableHead>Team Name</TableHead>
-                      <TableHead>College</TableHead>
+                      <TableHead>School</TableHead>
                       <TableHead>Members</TableHead>
-                      <TableHead>Current Stage</TableHead>
+                      <TableHead>Stage</TableHead>
                       <TableHead>Total Score</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {competition.teams.map((team: any) => (
+                    {competition.teams
+                      .sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0))
+                      .map((team: any, index: number) => (
                       <TableRow key={team._id}>
-                        <TableCell className="font-medium">{team.name}</TableCell>
+                        <TableCell className="font-medium">{index + 1}</TableCell>
                         <TableCell>
                           <div>
-                            <div className="font-medium">{team.college?.name}</div>
+                            <div className="font-medium">{team.name}</div>
                             <Badge variant="secondary" className="text-xs">
-                              {team.college?.code}
+                              {team.school?.code}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{team.school?.name}</div>
+                            <Badge variant="secondary" className="text-xs">
+                              {team.school?.code}
                             </Badge>
                           </div>
                         </TableCell>
@@ -540,12 +659,9 @@ export default function CompetitionDetailsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {(() => {
-                            const entry = (competition as any).teamScores?.find(
-                              (ts: any) => String(ts.team?._id ?? ts.team) === String(team._id)
-                            );
-                            return entry?.score ?? 0;
-                          })()}
+                          <div className="font-bold text-lg">
+                            {team.totalScore || 0}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -606,7 +722,7 @@ export default function CompetitionDetailsPage() {
                           {group.teams?.map((team: any) => (
                             <div key={team._id} className="flex justify-between items-center p-2 bg-muted rounded">
                               <span className="font-medium">{team.name}</span>
-                              <Badge variant="outline">{team.college?.code}</Badge>
+                              <Badge variant="outline">{team.school?.code}</Badge>
                             </div>
                           ))}
                         </div>
@@ -622,6 +738,135 @@ export default function CompetitionDetailsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Tie Resolution Dialog */}
+      {tieResolutionData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Resolve Tie for Semifinal Selection</h2>
+            <p className="text-gray-600 mb-4">
+              {tieResolutionData.error}
+            </p>
+            
+            <div className="mb-4">
+              <h3 className="font-semibold mb-2">Already Qualified (Top 8):</h3>
+              <div className="grid grid-cols-1 gap-2 mb-4">
+                {tieResolutionData.currentTop8?.map((team: any, index: number) => (
+                  <div key={team._id} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                    <span className="font-medium">{index + 1}. {team.name}</span>
+                    <span className="text-green-600 font-bold">{team.score} points</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h3 className="font-semibold mb-2">
+                Select {tieResolutionData.availableSlots} team(s) from tied teams:
+              </h3>
+              <div className="grid grid-cols-1 gap-2">
+                {tieResolutionData.tiedTeams?.map((team: any) => (
+                  <label key={team._id} className="flex items-center p-3 border rounded hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTiedTeams.includes(team._id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          if (selectedTiedTeams.length < tieResolutionData.availableSlots) {
+                            setSelectedTiedTeams([...selectedTiedTeams, team._id]);
+                          }
+                        } else {
+                          setSelectedTiedTeams(selectedTiedTeams.filter(id => id !== team._id));
+                        }
+                      }}
+                      className="mr-3"
+                    />
+                    <div className="flex-1">
+                      <div className="font-medium">{team.name}</div>
+                      <div className="text-sm text-gray-500">{team.school?.name}</div>
+                    </div>
+                    <div className="font-bold text-blue-600">{team.score} points</div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setTieResolutionData(null);
+                  setSelectedTiedTeams([]);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  console.log('Selected tied teams:', selectedTiedTeams.length);
+                  console.log('Available slots:', tieResolutionData.availableSlots);
+                  console.log('Current top 8:', tieResolutionData.currentTop8?.length);
+                  
+                  if (selectedTiedTeams.length !== tieResolutionData.availableSlots) {
+                    toast({
+                      title: "Error",
+                      description: `Please select exactly ${tieResolutionData.availableSlots} team(s) from tied teams`,
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+
+                  try {
+                    setAdvancingSemifinal(true);
+                    const allSelectedTeams = [
+                      ...tieResolutionData.currentTop8.map((t: any) => t._id),
+                      ...selectedTiedTeams
+                    ];
+                    
+                    console.log('Sending teams to API:', allSelectedTeams.length);
+                    console.log('Team IDs:', allSelectedTeams);
+
+                    const response = await fetch(`/api/competitions/${competitionId}/advance-semifinal-manual`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ selectedTeamIds: allSelectedTeams })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                      toast({
+                        title: "Success",
+                        description: "Teams advanced to semifinal phase"
+                      });
+                      setTieResolutionData(null);
+                      setSelectedTiedTeams([]);
+                      fetchCompetition();
+                    } else {
+                      toast({
+                        title: "Error",
+                        description: data.error || "Failed to advance teams",
+                        variant: "destructive"
+                      });
+                    }
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: "Failed to advance teams",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setAdvancingSemifinal(false);
+                  }
+                }}
+                disabled={selectedTiedTeams.length !== tieResolutionData.availableSlots || advancingSemifinal}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {advancingSemifinal ? "Advancing..." : "Advance Selected Teams"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

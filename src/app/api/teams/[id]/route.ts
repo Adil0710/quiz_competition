@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Team from '@/models/Team';
-import College from '@/models/College';
+import School from '@/models/School';
 import mongoose from 'mongoose';
 
 export async function GET(
@@ -20,7 +20,7 @@ request: Request,
     }
 
     const team = await Team.findById(id)
-      .populate('college', 'name code')
+      .populate('school', 'name code')
       .populate('groupId', 'name stage');
     
     if (!team) {
@@ -55,14 +55,14 @@ request: Request,
     }
 
     const body = await request.json();
-    const { name, college, members, totalScore, currentStage } = body;
+    const { name, school, members, totalScore, currentStage } = body;
 
-    // Validate college exists if provided
-    if (college) {
-      const collegeExists = await College.findById(college);
+    // Validate school exists if provided
+    if (school) {
+      const collegeExists = await School.findById(school);
       if (!collegeExists) {
         return NextResponse.json(
-          { success: false, error: 'College not found' },
+          { success: false, error: 'School not found' },
           { status: 400 }
         );
       }
@@ -81,9 +81,9 @@ request: Request,
 
     const team = await Team.findByIdAndUpdate(
       id,
-      { name, college, members, totalScore, currentStage },
+      { name, school, members, totalScore, currentStage },
       { new: true, runValidators: true }
-    ).populate('college', 'name code').populate('groupId', 'name stage');
+    ).populate('school', 'name code').populate('groupId', 'name stage');
 
     if (!team) {
       return NextResponse.json(

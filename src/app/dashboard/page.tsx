@@ -1,78 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Users, BookOpen, Trophy, Play } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, Users, Building2, HelpCircle, Trophy, Calendar, Clock, CheckCircle, BookOpen, Play } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import Link from 'next/link';
+import { useCompetitionStore } from '@/stores/useCompetitionStore';
 
-interface Competition {
-  _id: string;
-  name: string;
-  description: string;
-  status: 'draft' | 'ongoing' | 'completed';
-  currentStage: 'group' | 'semi_final' | 'final';
-  teams: any[];
-  groups: any[];
-  startDate: string;
-  createdAt: string;
-}
-
-interface Stats {
-  totalColleges: number;
-  totalTeams: number;
-  totalQuestions: number;
-  activeCompetitions: number;
-}
-
-export default function Dashboard() {
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [stats, setStats] = useState<Stats>({
-    totalColleges: 0,
-    totalTeams: 0,
-    totalQuestions: 0,
-    activeCompetitions: 0
-  });
-  const [loading, setLoading] = useState(true);
+export default function DashboardPage() {
+  const { 
+    stats, 
+    competitions, 
+    loading, 
+    fetchDashboardData 
+  } = useCompetitionStore();
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      const [competitionsRes, collegesRes, teamsRes, questionsRes] = await Promise.all([
-        fetch('/api/competitions'),
-        fetch('/api/colleges'),
-        fetch('/api/teams'),
-        fetch('/api/questions')
-      ]);
-
-      const [competitionsData, collegesData, teamsData, questionsData] = await Promise.all([
-        competitionsRes.json(),
-        collegesRes.json(),
-        teamsRes.json(),
-        questionsRes.json()
-      ]);
-
-      if (competitionsData.success) setCompetitions(competitionsData.data);
-      
-      setStats({
-        totalColleges: collegesData.success ? collegesData.data.length : 0,
-        totalTeams: teamsData.success ? teamsData.data.length : 0,
-        totalQuestions: questionsData.success ? questionsData.data.length : 0,
-        activeCompetitions: competitionsData.success ? 
-          competitionsData.data.filter((c: Competition) => c.status === 'ongoing').length : 0
-      });
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [fetchDashboardData]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -170,10 +117,10 @@ export default function Dashboard() {
           <p className="text-muted-foreground">Manage your quiz competitions, teams, and questions</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/colleges">
+          <Link href="/schools">
             <Button variant="outline">
               <Users className="mr-2 h-4 w-4" />
-              Manage Colleges
+              Manage Schools
             </Button>
           </Link>
           <Link href="/questions">
@@ -195,11 +142,11 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Colleges</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Schools</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalColleges}</div>
+            <div className="text-2xl font-bold">{stats.totalSchools}</div>
           </CardContent>
         </Card>
 

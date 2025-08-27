@@ -4,7 +4,7 @@ import Competition from "@/models/Competition";
 import Group from "@/models/Group";
 import Team from "@/models/Team";
 import mongoose from "mongoose";
-import College from "@/models/College";
+import School from "@/models/School";
 
 export async function POST(
   request: Request,
@@ -117,8 +117,8 @@ export async function POST(
       path: "teams",
       model: Team,
       populate: {
-        path: "college",
-        model: College,
+        path: "school",
+        model: School,
         select: "name code",
       },
     });

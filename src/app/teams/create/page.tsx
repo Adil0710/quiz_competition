@@ -11,18 +11,18 @@ import { useToast } from '@/components/ui/use-toast';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-interface College {
+interface School {
   _id: string;
   name: string;
   code: string;
 }
 
 export default function CreateTeamPage() {
-  const [colleges, setColleges] = useState<College[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    college: '',
+    school: '',
     members: [
       { name: '', email: '', phone: '', role: 'captain' as 'captain' | 'member' },
       { name: '', email: '', phone: '', role: 'member' as 'captain' | 'member' },
@@ -33,20 +33,20 @@ export default function CreateTeamPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetchColleges();
+    fetchSchools();
   }, []);
 
-  const fetchColleges = async () => {
+  const fetchSchools = async () => {
     try {
-      const response = await fetch('/api/colleges');
+      const response = await fetch('/api/schools');
       const data = await response.json();
       if (data.success) {
-        setColleges(data.data);
+        setSchools(data.data);
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch colleges",
+        description: "Failed to fetch schools",
         variant: "destructive"
       });
     }
@@ -136,7 +136,7 @@ export default function CreateTeamPage() {
               <Users className="h-5 w-5" />
               Team Information
             </CardTitle>
-            <CardDescription>Basic team details and college affiliation</CardDescription>
+            <CardDescription>Basic team details and school affiliation</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-2">
@@ -151,22 +151,22 @@ export default function CreateTeamPage() {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="college">College</Label>
-              <Select value={formData.college} onValueChange={(value) => setFormData({ ...formData, college: value })}>
+              <Label htmlFor="school">School</Label>
+              <Select value={formData.school} onValueChange={(value) => setFormData({ ...formData, school: value })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select college" />
+                  <SelectValue placeholder="Select school" />
                 </SelectTrigger>
                 <SelectContent>
-                  {colleges.map((college) => (
-                    <SelectItem key={college._id} value={college._id}>
-                      {college.name} ({college.code})
+                  {schools.map((school) => (
+                    <SelectItem key={school._id} value={school._id}>
+                      {school.name} ({school.code})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {colleges.length === 0 && (
+              {schools.length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  No colleges available. <Link href="/colleges" className="text-primary underline">Add colleges first</Link>.
+                  No schools available. <Link href="/schools" className="text-primary underline">Add schools first</Link>.
                 </p>
               )}
             </div>
@@ -239,7 +239,7 @@ export default function CreateTeamPage() {
           </Link>
           <Button 
             type="submit" 
-            disabled={loading || !formData.name || !formData.college}
+            disabled={loading || !formData.name || !formData.school}
           >
             {loading ? 'Creating...' : 'Create Team'}
           </Button>

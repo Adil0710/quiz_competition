@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import College from '@/models/College';
+import School from '@/models/School';
 import mongoose from 'mongoose';
 
 export async function GET(
@@ -13,24 +13,24 @@ export async function GET(
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid college ID' },
+        { success: false, error: 'Invalid school ID' },
         { status: 400 }
       );
     }
 
-    const college = await College.findById(id);
+    const school = await School.findById(id);
     
-    if (!college) {
+    if (!school) {
       return NextResponse.json(
-        { success: false, error: 'College not found' },
+        { success: false, error: 'School not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true, data: college });
+    return NextResponse.json({ success: true, data: school });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch college' },
+      { success: false, error: 'Failed to fetch school' },
       { status: 500 }
     );
   }
@@ -46,7 +46,7 @@ export async function PUT(
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid college ID' },
+        { success: false, error: 'Invalid school ID' },
         { status: 400 }
       );
     }
@@ -54,7 +54,7 @@ export async function PUT(
     const body = await request.json();
     const { name, code, address, contactEmail, contactPhone } = body;
 
-    const existingCollege = await College.findOne({
+    const existingCollege = await School.findOne({
       $and: [
         { _id: { $ne: id } },
         { $or: [{ name }, { code }] }
@@ -63,12 +63,12 @@ export async function PUT(
 
     if (existingCollege) {
       return NextResponse.json(
-        { success: false, error: 'College with this name or code already exists' },
+        { success: false, error: 'School with this name or code already exists' },
         { status: 400 }
       );
     }
 
-    const college = await College.findByIdAndUpdate(
+    const school = await School.findByIdAndUpdate(
       id,
       {
         name,
@@ -80,17 +80,17 @@ export async function PUT(
       { new: true, runValidators: true }
     );
 
-    if (!college) {
+    if (!school) {
       return NextResponse.json(
-        { success: false, error: 'College not found' },
+        { success: false, error: 'School not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true, data: college });
+    return NextResponse.json({ success: true, data: school });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: 'Failed to update college' },
+      { success: false, error: 'Failed to update school' },
       { status: 500 }
     );
   }
@@ -106,24 +106,24 @@ export async function DELETE(
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, error: 'Invalid college ID' },
+        { success: false, error: 'Invalid school ID' },
         { status: 400 }
       );
     }
 
-    const college = await College.findByIdAndDelete(id);
+    const school = await School.findByIdAndDelete(id);
 
-    if (!college) {
+    if (!school) {
       return NextResponse.json(
-        { success: false, error: 'College not found' },
+        { success: false, error: 'School not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ success: true, message: 'College deleted successfully' });
+    return NextResponse.json({ success: true, message: 'School deleted successfully' });
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: 'Failed to delete college' },
+      { success: false, error: 'Failed to delete school' },
       { status: 500 }
     );
   }

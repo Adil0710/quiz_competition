@@ -29,7 +29,7 @@ const QuestionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const College = mongoose.models.College || mongoose.model('College', CollegeSchema);
+const School = mongoose.models.School || mongoose.model('School', CollegeSchema);
 const Question = mongoose.models.Question || mongoose.model('Question', QuestionSchema);
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/quiz_competition';
@@ -41,12 +41,12 @@ async function seedData() {
     console.log('Connected to MongoDB');
 
     // Clear existing data
-    await College.deleteMany({});
+    await School.deleteMany({});
     await Question.deleteMany({});
     console.log('Cleared existing data');
 
-    // Create sample colleges
-    const colleges = await College.insertMany([
+    // Create sample schools
+    const schools = await School.insertMany([
       {
         name: 'Massachusetts Institute of Technology',
         code: 'MIT',
@@ -153,7 +153,7 @@ async function seedData() {
         contactPhone: '+81-3-3812-2111'
       },
       {
-        name: 'Imperial College London',
+        name: 'Imperial School London',
         code: 'ICL',
         address: 'London, UK',
         contactEmail: 'admin@imperial.ac.uk',
@@ -175,7 +175,7 @@ async function seedData() {
       }
     ]);
 
-    console.log(`Created ${colleges.length} colleges`);
+    console.log(`Created ${schools.length} schools`);
 
     // Create sample questions (mcq, media, rapid_fire)
     const questions = await Question.insertMany([

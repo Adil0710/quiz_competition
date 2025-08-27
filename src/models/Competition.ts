@@ -2,19 +2,23 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IRound extends Document {
   roundNumber: number;
-  type: 'mcq' | 'media' | 'rapid_fire';
+  type: 'mcq' | 'media' | 'buzzer' | 'rapid_fire' | 'sequence' | 'visual_rapid_fire';
+  phase: 'league' | 'semi_final' | 'final';
   questions: mongoose.Types.ObjectId[];
   teamScores: {
     team: mongoose.Types.ObjectId;
     score: number;
     answers: {
       question: mongoose.Types.ObjectId;
-      answer: string;
+      answer: string | number;
       isCorrect: boolean;
       points: number;
+      timeSpent?: number;
     }[];
   }[];
   isCompleted: boolean;
+  startTime?: Date;
+  endTime?: Date;
 }
 
 export interface ICompetition extends Document {
@@ -40,7 +44,12 @@ const RoundSchema: Schema = new Schema({
   },
   type: {
     type: String,
-    enum: ['mcq', 'media', 'rapid_fire'],
+    enum: ['mcq', 'media', 'buzzer', 'rapid_fire', 'sequence', 'visual_rapid_fire'],
+    required: true
+  },
+  phase: {
+    type: String,
+    enum: ['league', 'semi_final', 'final'],
     required: true
   },
   questions: [{
@@ -69,12 +78,21 @@ const RoundSchema: Schema = new Schema({
       points: {
         type: Number,
         default: 0
+      },
+      timeSpent: {
+        type: Number
       }
     }]
   }],
   isCompleted: {
     type: Boolean,
     default: false
+  },
+  startTime: {
+    type: Date
+  },
+  endTime: {
+    type: Date
   }
 });
 

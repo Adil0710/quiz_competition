@@ -16,7 +16,7 @@ import Link from 'next/link';
 interface Team {
   _id: string;
   name: string;
-  college?: {
+  school?: {
     _id: string;
     name: string;
     code: string;
@@ -59,12 +59,12 @@ export default function CreateCompetitionPage() {
   const bulkCreateTeams = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/teams/bulk-from-colleges', { method: 'POST' });
+      const res = await fetch('/api/teams/bulk-from-schools', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         toast({
           title: 'Teams created',
-          description: `${data.created} team(s) created from colleges`
+          description: `${data.created} team(s) created from schools`
         });
         await fetchTeams();
       } else {
@@ -133,7 +133,7 @@ export default function CreateCompetitionPage() {
           title: "Success",
           description: "Competition created successfully"
         });
-        router.push(`/competitions/${data.data._id}/manage`);
+        router.push(`/competitions/competitions/${data.data._id}`);
       } else {
         toast({
           title: "Error",
@@ -173,7 +173,7 @@ export default function CreateCompetitionPage() {
             <Button variant="outline" size="sm">Go to Teams</Button>
           </Link>
           <Button size="sm" onClick={bulkCreateTeams} disabled={loading}>
-            {loading ? 'Working...' : 'Bulk create teams from colleges'}
+            {loading ? 'Working...' : 'Bulk create teams from schools'}
           </Button>
         </div>
       </div>
@@ -261,8 +261,8 @@ export default function CreateCompetitionPage() {
                             />
                             <h3 className="font-semibold">{team.name}</h3>
                           </div>
-                          <Badge variant="secondary">{team.college?.code ?? 'N/A'}</Badge>
-                          <p className="text-sm text-muted-foreground">{team.college?.name ?? 'Unknown college'}</p>
+                          <Badge variant="secondary">{team.school?.code ?? 'N/A'}</Badge>
+                          <p className="text-sm text-muted-foreground">{team.school?.name ?? 'Unknown school'}</p>
                           <p className="text-xs text-muted-foreground">
                             {(team.members?.length ?? 0)} members
                           </p>

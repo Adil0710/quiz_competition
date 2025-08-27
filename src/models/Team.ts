@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ITeam extends Document {
   name: string;
-  college: mongoose.Types.ObjectId;
+  school: mongoose.Types.ObjectId;
   members: {
     name: string;
     email: string;
@@ -22,10 +22,10 @@ const TeamSchema: Schema = new Schema({
     required: [true, 'Team name is required'],
     trim: true
   },
-  college: {
+  school: {
     type: Schema.Types.ObjectId,
-    ref: 'College',
-    required: [true, 'College is required']
+    ref: 'School',
+    required: [true, 'School is required']
   },
   members: [{
     name: {

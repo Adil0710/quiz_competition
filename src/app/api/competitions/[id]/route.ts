@@ -3,7 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Competition from '@/models/Competition';
 import mongoose, { model } from 'mongoose';
 import Group from '@/models/Group';
-import College from '@/models/College';
+import School from '@/models/School';
 import Team from '@/models/Team';
 
 // Ensure the Group model is registered (prevent tree-shaking of unused import)
@@ -29,8 +29,8 @@ export async function GET(
         path: 'teams',
         model: Team,
         populate: {
-          path: 'college',
-          model: College,
+          path: 'school',
+          model: School,
           select: 'name code'
         }
       })
@@ -39,7 +39,7 @@ export async function GET(
         populate: {
           path: 'teams',
           populate: {
-            path: 'college',
+            path: 'school',
             select: 'name code'
           }
         }
@@ -120,7 +120,7 @@ export async function PUT(
     ).populate({
       path: 'teams',
       populate: {
-        path: 'college',
+        path: 'school',
         select: 'name code'
       }
     });

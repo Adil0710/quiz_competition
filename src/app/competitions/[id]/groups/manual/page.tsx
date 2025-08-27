@@ -16,7 +16,7 @@ import { ArrowLeft, Loader2, Users } from "lucide-react";
 interface Team {
   _id: string;
   name: string;
-  college?: { name: string; code: string };
+  school?: { name: string; code: string };
 }
 
 interface Competition {
@@ -77,7 +77,7 @@ export default function ManualGroupsPage() {
     if (!search.trim()) return filtered;
     const s = search.toLowerCase();
     return filtered.filter(
-      (t) => t.name.toLowerCase().includes(s) || t.college?.code?.toLowerCase().includes(s)
+      (t) => t.name.toLowerCase().includes(s) || t.school?.code?.toLowerCase().includes(s)
     );
   }, [competition?.teams, assignedTeamIds, search]);
 
@@ -238,7 +238,7 @@ export default function ManualGroupsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Team</TableHead>
-                    <TableHead>College</TableHead>
+                    <TableHead>School</TableHead>
                     <TableHead className="text-right">Add</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -254,9 +254,9 @@ export default function ManualGroupsPage() {
                       <TableRow key={t._id}>
                         <TableCell className="font-medium">{t.name}</TableCell>
                         <TableCell>
-                          {t.college?.name}
-                          {t.college?.code ? (
-                            <Badge variant="outline" className="ml-2 text-xs">{t.college.code}</Badge>
+                          {t.school?.name}
+                          {t.school?.code ? (
+                            <Badge variant="outline" className="ml-2 text-xs">{t.school.code}</Badge>
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right">
@@ -303,8 +303,8 @@ export default function ManualGroupsPage() {
                       <div key={teamId} className="flex items-center justify-between p-2 border rounded">
                         <div>
                           <div className="font-medium">{t.name}</div>
-                          {t.college?.code ? (
-                            <div className="text-sm text-muted-foreground">{t.college.code}</div>
+                          {t.school?.code ? (
+                            <div className="text-sm text-muted-foreground">{t.school.code}</div>
                           ) : null}
                         </div>
                         <Button size="sm" variant="outline" onClick={() => removeFromGroup(teamId, idx)}>

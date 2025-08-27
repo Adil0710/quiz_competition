@@ -9,11 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Search, Users, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Users, Loader2, Building2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 
-interface College {
+interface School {
   _id: string;
   name: string;
   code: string;
@@ -22,7 +22,7 @@ interface College {
 interface Team {
   _id: string;
   name: string;
-  college?: College | null;
+  school?: School | null;
   members?: {
     name: string;
     email: string;
@@ -36,17 +36,18 @@ interface Team {
 
 export default function TeamsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
-  const [colleges, setColleges] = useState<College[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
   const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkCreating, setBulkCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    college: '',
+    school: '',
     members: [
       { name: '', email: '', phone: '', role: 'captain' as 'captain' | 'member' },
       { name: '', email: '', phone: '', role: 'member' as 'captain' | 'member' },
@@ -57,18 +58,18 @@ export default function TeamsPage() {
 
   useEffect(() => {
     fetchTeams();
-    fetchColleges();
+    fetchSchools();
   }, []);
 
   useEffect(() => {
     const term = searchTerm.toLowerCase();
     const filtered = teams.filter(team => {
-      const collegeName = team.college?.name?.toLowerCase() || '';
-      const collegeCode = team.college?.code?.toLowerCase() || '';
+      const schoolName = team.school?.name?.toLowerCase() || '';
+      const schoolCode = team.school?.code?.toLowerCase() || '';
       return (
         team.name.toLowerCase().includes(term) ||
-        collegeName.includes(term) ||
-        collegeCode.includes(term)
+        schoolName.includes(term) ||
+        schoolCode.includes(term)
       );
     });
     setFilteredTeams(filtered);
@@ -88,21 +89,21 @@ export default function TeamsPage() {
         variant: "destructive"
       });
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  const fetchColleges = async () => {
+  const fetchSchools = async () => {
     try {
-      const response = await fetch('/api/colleges');
+      const response = await fetch('/api/schools');
       const data = await response.json();
       if (data.success) {
-        setColleges(data.data);
+        setSchools(data.data);
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch colleges",
+        description: "Failed to fetch schools",
         variant: "destructive"
       });
     }
@@ -169,7 +170,7 @@ export default function TeamsPage() {
     setEditingTeam(team);
     setFormData({
       name: team.name,
-      college: team.college?._id || '',
+      school: team.school?._id || '',
       members: [
         ...(team.members || []),
         ...Array(Math.max(0, 3 - (team.members?.length || 0))).fill({ name: '', email: '', phone: '', role: 'member' })
@@ -213,7 +214,7 @@ export default function TeamsPage() {
   const resetForm = () => {
     setFormData({
       name: '',
-      college: '',
+      school: '',
       members: [
         { name: '', email: '', phone: '', role: 'captain' },
         { name: '', email: '', phone: '', role: 'member' },
@@ -229,6 +230,42 @@ export default function TeamsPage() {
     setFormData({ ...formData, members: newMembers });
   };
 
+  const handleBulkCreateTeams = async () => {
+    if (!confirm('This will create teams for all schools that don\'t have teams yet. Continue?')) return;
+    
+    setBulkCreating(true);
+    try {
+      const response = await fetch('/api/teams/bulk-from-schools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: `Created ${data.createdCount} teams successfully`
+        });
+        fetchTeams();
+      } else {
+        toast({
+          title: "Error", 
+          description: data.error || "Failed to create teams",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create teams",
+        variant: "destructive"
+      });
+    } finally {
+      setBulkCreating(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-8">
       {/* Header */}
@@ -237,20 +274,38 @@ export default function TeamsPage() {
           <h1 className="text-3xl font-bold">Team Management</h1>
           <p className="text-muted-foreground">Create and manage competition teams</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Team
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingTeam ? 'Edit Team' : 'Add New Team'}</DialogTitle>
-              <DialogDescription>
-                {editingTeam ? 'Update team information' : 'Create a new team for competition'}
-              </DialogDescription>
-            </DialogHeader>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleBulkCreateTeams} 
+            disabled={bulkCreating}
+            variant="outline"
+          >
+            {bulkCreating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <Building2 className="mr-2 h-4 w-4" />
+                Create Teams from Schools
+              </>
+            )}
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => setIsDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Team
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingTeam ? 'Edit Team' : 'Add New Team'}</DialogTitle>
+                <DialogDescription>
+                  {editingTeam ? 'Update team information' : 'Create a new team for competition'}
+                </DialogDescription>
+              </DialogHeader>
             <form onSubmit={handleSubmit}>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
@@ -265,15 +320,15 @@ export default function TeamsPage() {
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="college">College</Label>
-                  <Select value={formData.college} onValueChange={(value) => setFormData({ ...formData, college: value })}>
+                  <Label htmlFor="school">School</Label>
+                  <Select value={formData.school} onValueChange={(value) => setFormData({ ...formData, school: value })}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select college" />
+                      <SelectValue placeholder="Select school" />
                     </SelectTrigger>
                     <SelectContent>
-                      {colleges.map((college) => (
-                        <SelectItem key={college._id} value={college._id}>
-                          {college.name} ({college.code})
+                      {schools.map((school) => (
+                        <SelectItem key={school._id} value={school._id}>
+                          {school.name} ({school.code})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -346,8 +401,9 @@ export default function TeamsPage() {
                 </Button>
               </DialogFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Search */}
@@ -359,7 +415,7 @@ export default function TeamsPage() {
           <div className="relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by team name, college name, or code..."
+              placeholder="Search by team name, school name, or code..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -400,7 +456,7 @@ export default function TeamsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Team Name</TableHead>
-                  <TableHead>College</TableHead>
+                  <TableHead>School</TableHead>
                   <TableHead>Members</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Score</TableHead>
@@ -414,8 +470,8 @@ export default function TeamsPage() {
                     <TableCell className="font-medium">{team.name}</TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{team.college?.name ?? 'Unknown college'}</div>
-                        <Badge variant="secondary">{team.college?.code ?? 'N/A'}</Badge>
+                        <div className="font-medium">{team.school?.name ?? 'Unknown school'}</div>
+                        <Badge variant="secondary">{team.school?.code ?? 'N/A'}</Badge>
                       </div>
                     </TableCell>
                     <TableCell>{team.members?.length ?? 0}</TableCell>

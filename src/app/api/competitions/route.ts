@@ -3,7 +3,7 @@ import dbConnect from "@/lib/mongodb";
 import Competition from "@/models/Competition";
 import Team from "@/models/Team";
 import Group from "@/models/Group";
-import College from "@/models/College";
+import School from "@/models/School";
 
 export async function GET() {
   try {
@@ -12,10 +12,10 @@ export async function GET() {
       .populate({
         path: "teams",
         model: Team,
-        select: "name college members totalScore currentStage",
+        select: "name school members totalScore currentStage",
         populate: {
-          path: "college",
-          model: College,
+          path: "school",
+          model: School,
           select: "name code",
         },
       })
@@ -25,8 +25,8 @@ export async function GET() {
         select: "name stage teams",
         populate: {
           path: "teams",
-          select: "name college",
-          populate: { path: "college", select: "name code" },
+          select: "name school",
+          populate: { path: "school", select: "name code" },
         },
       })
       .sort({ createdAt: -1 });
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     const populatedCompetition = await Competition.findById(
       competition._id
-    ).populate("teams", "name college");
+    ).populate("teams", "name school");
 
     return NextResponse.json(
       { success: true, data: populatedCompetition },

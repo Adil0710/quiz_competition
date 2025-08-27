@@ -11,7 +11,7 @@ export default function Navbar() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/competitions", label: "Competitions" },
     { href: "/teams", label: "Teams" },
-    { href: "/colleges", label: "Colleges" },
+    { href: "/schools", label: "Schools" },
   ];
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">

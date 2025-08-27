@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IQuestion extends Document {
   question: string;
-  type: 'mcq' | 'media' | 'rapid_fire';
+  type: 'mcq' | 'media' | 'buzzer' | 'rapid_fire' | 'sequence' | 'visual_rapid_fire';
   options?: string[];
   correctAnswer?: string | number;
   mediaUrl?: string;
@@ -10,6 +10,7 @@ export interface IQuestion extends Document {
   difficulty: 'easy' | 'medium' | 'hard';
   category: string;
   points: number;
+  phase: 'league' | 'semi_final' | 'final';
   isUsed: boolean;
   usedInCompetitions: mongoose.Types.ObjectId[];
   createdAt: Date;
@@ -24,7 +25,7 @@ const QuestionSchema: Schema = new Schema({
   },
   type: {
     type: String,
-    enum: ['mcq', 'media', 'rapid_fire'],
+    enum: ['mcq', 'media', 'buzzer', 'rapid_fire', 'sequence', 'visual_rapid_fire'],
     required: [true, 'Question type is required']
   },
   options: [{
@@ -56,6 +57,11 @@ const QuestionSchema: Schema = new Schema({
     type: Number,
     default: 1,
     min: 1
+  },
+  phase: {
+    type: String,
+    enum: ['league', 'semi_final', 'final'],
+    required: [true, 'Phase is required']
   },
   isUsed: {
     type: Boolean,
