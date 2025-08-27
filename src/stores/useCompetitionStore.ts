@@ -75,7 +75,7 @@ export const useCompetitionStore = create<CompetitionStore>()(
         try {
           const [competitionsRes, schoolsRes, teamsRes, questionsRes] = await Promise.all([
             fetch('/api/competitions'),
-            fetch('/api/colleges'),
+            fetch('/api/schools'),
             fetch('/api/teams'),
             fetch('/api/questions')
           ]);

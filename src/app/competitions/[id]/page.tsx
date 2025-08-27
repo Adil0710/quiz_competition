@@ -585,8 +585,8 @@ export default function CompetitionDetailsPage() {
                   </CardTitle>
                   <CardDescription>
                     {competition.currentStage === 'group' ? 'All teams registered for this competition (sorted by total score)' : 
-                     competition.currentStage === 'semi_final' ? 'Teams competing in semifinal phase (sorted by total score)' : 
-                     'Teams competing in final phase (sorted by total score)'}
+                     competition.currentStage === 'semi_final' ? 'Teams competing in semifinal round (sorted by total score)' : 
+                     'Teams competing in final round (sorted by total score)'}
                   </CardDescription>
                 </div>
                 {competition.currentStage === 'group' && competition.teams.length >= 9 && (
@@ -612,28 +612,44 @@ export default function CompetitionDetailsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {competition.teams.length === 0 ? (
-                <div className="text-center py-8">
-                  <Users className="mx-auto h-12 w-12 text-muted-foreground" />
-                  <h3 className="mt-4 text-lg font-semibold">No teams registered</h3>
-                  <p className="text-muted-foreground">Teams will appear here once registered.</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Rank</TableHead>
-                      <TableHead>Team Name</TableHead>
-                      <TableHead>School</TableHead>
-                      <TableHead>Members</TableHead>
-                      <TableHead>Stage</TableHead>
-                      <TableHead>Total Score</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {competition.teams
-                      .sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0))
-                      .map((team: any, index: number) => (
+              {(() => {
+                // Get current round teams based on stage
+                let currentTeams = [];
+                if (competition.currentStage === 'group') {
+                  currentTeams = competition.teams || [];
+                } else {
+                  // For semifinal/final, get teams from groups
+                  currentTeams = competition.groups?.reduce((teams: any[], group: any) => {
+                    return teams.concat(group.teams || []);
+                  }, []) || [];
+                }
+                
+                if (currentTeams.length === 0) {
+                  return (
+                    <div className="text-center py-8">
+                      <Users className="mx-auto h-12 w-12 text-muted-foreground" />
+                      <h3 className="mt-4 text-lg font-semibold">No teams in current round</h3>
+                      <p className="text-muted-foreground">Teams will appear here once the round is set up.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Rank</TableHead>
+                        <TableHead>Team Name</TableHead>
+                        <TableHead>School</TableHead>
+                        <TableHead>Members</TableHead>
+                        <TableHead>Stage</TableHead>
+                        <TableHead>Total Score</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currentTeams
+                        .sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0))
+                        .map((team: any, index: number) => (
                       <TableRow key={team._id}>
                         <TableCell className="font-medium">{index + 1}</TableCell>
                         <TableCell>
@@ -664,10 +680,11 @@ export default function CompetitionDetailsPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+                        ))}
+                    </TableBody>
+                  </Table>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
