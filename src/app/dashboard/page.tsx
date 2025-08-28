@@ -1,41 +1,61 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Users, Building2, HelpCircle, Trophy, Calendar, Clock, CheckCircle, BookOpen, Play } from 'lucide-react';
+import {
+  Plus,
+  Users,
+  Trophy,
+  BookOpen,
+  Play
+} from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { useCompetitionStore } from '@/stores/useCompetitionStore';
 
 export default function DashboardPage() {
-  const { 
-    stats, 
-    competitions, 
-    loading, 
-    fetchDashboardData 
+  const {
+    stats,
+    competitions,
+    loading,
+    fetchDashboardData
   } = useCompetitionStore();
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | undefined) => {
     switch (status) {
-      case 'draft': return 'bg-gray-500';
-      case 'ongoing': return 'bg-green-500';
-      case 'completed': return 'bg-blue-500';
-      default: return 'bg-gray-500';
+      case 'draft':
+        return 'bg-gray-500';
+      case 'ongoing':
+        return 'bg-green-500';
+      case 'completed':
+        return 'bg-blue-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
-  const getStageColor = (stage: string) => {
+  const getStageColor = (stage: string | undefined) => {
     switch (stage) {
-      case 'group': return 'bg-yellow-500';
-      case 'semi_final': return 'bg-orange-500';
-      case 'final': return 'bg-red-500';
-      default: return 'bg-gray-500';
+      case 'group':
+        return 'bg-yellow-500';
+      case 'semi_final':
+        return 'bg-orange-500';
+      case 'final':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
     }
   };
 
@@ -114,7 +134,9 @@ export default function DashboardPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Quiz Competition Dashboard</h1>
-          <p className="text-muted-foreground">Manage your quiz competitions, teams, and questions</p>
+          <p className="text-muted-foreground">
+            Manage your quiz competitions, teams, and questions
+          </p>
         </div>
         <div className="flex gap-2">
           <Link href="/schools">
@@ -192,7 +214,9 @@ export default function DashboardPage() {
             <div className="text-center py-8">
               <Trophy className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-4 text-lg font-semibold">No competitions yet</h3>
-              <p className="text-muted-foreground">Get started by creating your first competition.</p>
+              <p className="text-muted-foreground">
+                Get started by creating your first competition.
+              </p>
               <Link href="/competitions/create">
                 <Button className="mt-4">
                   <Plus className="mr-2 h-4 w-4" />
@@ -208,22 +232,37 @@ export default function DashboardPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <h3 className="text-lg font-semibold">{competition.name}</h3>
-                        <Badge className={getStatusColor(competition.status)}>
-                          {competition.status}
-                        </Badge>
-                        {competition.status === 'ongoing' && (
-                          <Badge className={getStageColor(competition.currentStage)}>
-                            {competition.currentStage.replace('_', ' ')}
+
+                        {competition.status && (
+                          <Badge className={getStatusColor(competition.status)}>
+                            {competition.status}
                           </Badge>
                         )}
+
+                        {competition.status === 'ongoing' &&
+                          competition.currentStage && (
+                            <Badge className={getStageColor(competition.currentStage)}>
+                              {competition.currentStage.replace('_', ' ')}
+                            </Badge>
+                          )}
                       </div>
-                      <p className="text-muted-foreground">{competition.description}</p>
+
+                      <p className="text-muted-foreground">
+                        {competition.description || 'No description'}
+                      </p>
+
                       <div className="flex gap-4 text-sm text-muted-foreground">
                         <span>Teams: {competition.teams?.length || 0}</span>
                         <span>Groups: {competition.groups?.length || 0}</span>
-                        <span>Started: {new Date(competition.startDate).toLocaleDateString()}</span>
+                        <span>
+                          Started:{' '}
+                          {competition.startDate
+                            ? new Date(competition.startDate).toLocaleDateString()
+                            : 'N/A'}
+                        </span>
                       </div>
                     </div>
+
                     <div className="flex gap-2">
                       <Link href={`/competitions/${competition._id}`}>
                         <Button variant="outline" size="sm">
