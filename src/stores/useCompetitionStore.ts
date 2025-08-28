@@ -45,7 +45,7 @@ export const useCompetitionStore = create<CompetitionStore>()(
         totalQuestions: 0,
         activeCompetitions: 0
       },
-      loading: false,
+      loading: true,
 
       setCompetitions: (competitions) => set({ competitions }),
       setStats: (stats) => set({ stats }),
