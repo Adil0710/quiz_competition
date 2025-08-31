@@ -23,7 +23,13 @@ export async function DELETE(
       );
     }
 
-    const competition = await Competition.findById(id);
+    const competition = await Competition.findById(id).populate({
+      path: 'groups',
+      populate: {
+        path: 'teams',
+        model: 'Team'
+      }
+    });
     if (!competition) {
       return NextResponse.json(
         { success: false, error: 'Competition not found' },
@@ -31,12 +37,44 @@ export async function DELETE(
       );
     }
 
-    // Reset the competition-scoped teamScores
+    // Import Team model
+    const Team = (await import('@/models/Team')).default;
+
+    // Get all team IDs from all groups in the competition
+    const allTeamIds: string[] = [];
+    
+    if (competition.groups && competition.groups.length > 0) {
+      competition.groups.forEach((group: any) => {
+        if (group.teams && group.teams.length > 0) {
+          group.teams.forEach((team: any) => {
+            const teamId = team._id ? team._id.toString() : team.toString();
+            allTeamIds.push(teamId);
+          });
+        }
+      });
+    }
+
+    console.log('Found team IDs to reset:', allTeamIds);
+
+    // Reset totalScore to 0 for all teams in this competition
+    if (allTeamIds.length > 0) {
+      const result = await Team.updateMany(
+        { _id: { $in: allTeamIds } },
+        { $set: { totalScore: 0 } }
+      );
+      console.log('Reset result:', result);
+    }
+
+    // Also reset the competition-scoped teamScores for backward compatibility
     competition.teamScores = [] as any;
     await competition.save();
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ 
+      success: true, 
+      message: `Reset scores for ${allTeamIds.length} teams` 
+    });
   } catch (error) {
+    console.error('Error resetting scores:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to reset competition scores' },
       { status: 500 }

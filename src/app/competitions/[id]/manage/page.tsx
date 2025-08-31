@@ -371,11 +371,17 @@ export default function ManageCompetitionPage() {
     };
   }, [currentQuestion, currentState, competition, currentGroup, currentPhase]);
 
-  // Fullscreen handling
+  // Fullscreen change handler
   useEffect(() => {
     const handler = () => {
       const isFs = !!document.fullscreenElement;
       setPresenting(isFs);
+      // Focus presentation container when entering fullscreen
+      if (isFs && presentRef.current) {
+        setTimeout(() => {
+          presentRef.current?.focus();
+        }, 100);
+      }
     };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
@@ -1088,6 +1094,10 @@ export default function ManageCompetitionPage() {
     if (presentRef.current) {
       try {
         await presentRef.current.requestFullscreen();
+        // Focus the presentation container to ensure keyboard events are captured
+        setTimeout(() => {
+          presentRef.current?.focus();
+        }, 100);
       } catch (error) {
         console.error("Error entering fullscreen:", error);
       }
@@ -2139,9 +2149,65 @@ export default function ManageCompetitionPage() {
       {/* Presentation Mode */}
       <div
         ref={presentRef}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          // Handle keyboard shortcuts directly on presentation screen
+          if (
+            event.target instanceof HTMLInputElement ||
+            event.target instanceof HTMLTextAreaElement
+          ) {
+            return;
+          }
+
+          const key = event.key.toLowerCase();
+          event.preventDefault();
+
+          switch (key) {
+            case "q":
+              if (!currentQuestion && competition && currentGroup) {
+                const firstRound = getCurrentRound();
+                setRoundType(firstRound.type as any);
+                loadQuestions(firstRound.type, currentPhase);
+              } else if (currentQuestion) {
+                handleQuestionToggle();
+              }
+              break;
+            case "o":
+              if (roundType === "visual_rapid_fire" && currentState === "options_shown") {
+                handleNextImage();
+              } else {
+                handleOptionsToggle();
+              }
+              break;
+            case "a":
+              if (currentQuestion) {
+                if (roundType === "sequence" && showSequenceModal) {
+                  handleSequenceReveal();
+                } else if (roundType === "media") {
+                  handleMediaAnswerToggle();
+                } else {
+                  handleAnswerToggle();
+                }
+              }
+              break;
+            case "t":
+              handleTimerToggle();
+              break;
+            case "n":
+              if (currentQuestion) {
+                stopAllAudio();
+                setState("idle");
+                handleNextQuestion();
+              }
+              break;
+            case "escape":
+              exitPresentationMode();
+              break;
+          }
+        }}
         className={`${
           isPresenting ? "block" : "hidden"
-        } fixed inset-0 bg-black text-white z-50`}
+        } fixed inset-0 bg-black text-white z-50 outline-none`}
       >
         <div className="h-full flex flex-col">
           {/* Presentation Header */}
@@ -2425,6 +2491,87 @@ export default function ManageCompetitionPage() {
                         )}
                       </div>
                     )}
+
+                  {/* Visual Rapid Fire in Presentation */}
+                  {roundType === "visual_rapid_fire" &&
+                    currentQuestion?.imageUrls &&
+                    currentState === "options_shown" && (
+                      <div className="text-center">
+                        <h2 className="text-4xl font-bold mb-6 text-purple-400">
+                          Visual Rapid Fire - Image {currentImageIndex + 1}/
+                          {currentQuestion.imageUrls.length}
+                        </h2>
+                        <div className="relative">
+                          {imagesPreloaded[currentImageIndex] ? (
+                            <img
+                              src={currentQuestion.imageUrls[currentImageIndex]}
+                              alt={`Visual rapid fire ${currentImageIndex + 1}`}
+                              className="max-w-2xl max-h-96 object-contain rounded-lg shadow-lg mx-auto"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-96 w-full max-w-2xl mx-auto bg-gray-200 rounded-lg">
+                              <div className="text-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                                <p className="text-gray-600">Loading image...</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xl text-gray-300 mt-4">
+                          Press O to cycle through images
+                        </p>
+                      </div>
+                    )}
+
+                  {/* Sequence Round in Presentation */}
+                  {roundType === "sequence" && showSequenceModal && (
+                    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[70]">
+                      <div className="bg-white rounded-lg p-8 max-w-4xl w-full mx-4 text-black">
+                        <h2 className="text-3xl font-bold mb-6 text-center">
+                          Sequence Round
+                        </h2>
+                        <div className="text-2xl font-bold mb-4 text-center">
+                          {currentQuestion?.question}
+                        </div>
+                        
+                        {(currentQuestion as any)?.sequenceSteps && (
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            {(currentQuestion as any).sequenceSteps.map((step: string, index: number) => (
+                              <div
+                                key={index}
+                                className={`border-2 rounded-lg p-4 text-center transition-all ${
+                                  index < sequenceRevealStep
+                                    ? "bg-blue-100 border-blue-400"
+                                    : "bg-gray-100 border-gray-300"
+                                }`}
+                              >
+                                <div className="font-bold text-lg mb-2">
+                                  Step {index + 1}
+                                </div>
+                                {index < sequenceRevealStep ? (
+                                  <div className="text-lg">{step}</div>
+                                ) : (
+                                  <div className="text-gray-400">Hidden</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="text-center">
+                          <p className="text-lg text-gray-600 mb-4">
+                            Press A to reveal next step or show answer
+                          </p>
+                          {sequenceRevealStep >= ((currentQuestion as any)?.sequenceSteps?.length || 0) && (
+                            <div className="bg-green-100 border border-green-400 rounded-lg p-4">
+                              <h3 className="font-bold text-xl mb-2">Answer:</h3>
+                              <p className="text-xl">{(currentQuestion as any)?.answer}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Answer in presentation */}
                   {currentState === "answer_shown" && currentQuestion && (
