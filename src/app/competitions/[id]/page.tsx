@@ -496,7 +496,7 @@ export default function CompetitionDetailsPage() {
               </Badge>
               {competition.status === "ongoing" && (
                 <Badge className={getStageColor(competition.currentStage)}>
-                  {competition.currentStage.replace("_", " ")}
+                  {competition.currentStage?.replace("_", " ") || "group"}
                 </Badge>
               )}
             </div>
@@ -708,7 +708,7 @@ export default function CompetitionDetailsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {competition.currentStage.replace("_", " ")}
+              {competition.currentStage?.replace("_", " ") || "group"}
             </div>
           </CardContent>
         </Card>
@@ -933,7 +933,7 @@ export default function CompetitionDetailsPage() {
                         <CardTitle className="flex items-center justify-between">
                           {group.name}
                           <Badge className={getStageColor(group.stage)}>
-                            {group.stage.replace("_", " ")}
+                            {group.stage?.replace("_", " ") || "group"}
                           </Badge>
                         </CardTitle>
                       </CardHeader>
