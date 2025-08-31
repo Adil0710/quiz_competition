@@ -105,12 +105,13 @@ export default function ManageCompetitionPage() {
   const [noQuestionsForType, setNoQuestionsForType] = useState(false);
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const [mediaLoaded, setMediaLoaded] = useState<boolean>(false);
-  const [mediaLoading, setMediaLoading] = useState<boolean>(false);
-  const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
-  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imagesPreloaded, setImagesPreloaded] = useState<boolean[]>([]);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
 
   const presentRef = useRef<HTMLDivElement | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -891,9 +892,12 @@ export default function ManageCompetitionPage() {
           description: `All ${roundType} questions completed! Moving to ${nextRound.type} round.`,
         });
 
+        // Update round index and type in sync
+        setCurrentRoundIndex(currentRoundIndexInPhase + 1);
+        setRoundType(nextRound.type as any);
+        
         // Load questions for next round type
         loadQuestions(nextRound.type, currentPhase);
-        setCurrentRoundIndex(currentRoundIndexInPhase + 1);
       } else {
         // All rounds completed for this phase
         toast({
@@ -933,6 +937,9 @@ export default function ManageCompetitionPage() {
     // Play appropriate audio based on answer correctness
     if (isCorrect) {
       playRightAnswerAudio();
+      // Show confetti for correct answer
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
     } else {
       playWrongAnswerAudio();
       // Auto-show correct answer for wrong selection
@@ -972,24 +979,24 @@ export default function ManageCompetitionPage() {
       });
 
       if (response.ok) {
-        const updatedTeam = await response.json();
-        
+        const result = await response.json();
+        const newTotal =
+          (result?.data?.newTotalScore ?? result?.newTotalScore ?? result?.totalScore) as number;
+
         // Set the exact score from database (not additive)
-        setTeamScore(teamId, updatedTeam.totalScore);
+        setTeamScore(teamId, newTotal);
 
         // Also update the team's totalScore in the current group
         if (currentGroup) {
           const updatedTeams = currentGroup.teams?.map((team) =>
-            team._id === teamId
-              ? { ...team, totalScore: updatedTeam.totalScore }
-              : team
+            team._id === teamId ? { ...team, totalScore: newTotal } : team
           );
           setCurrentGroup({ ...currentGroup, teams: updatedTeams });
         }
 
         toast({
           title: "Points Awarded",
-          description: `${points > 0 ? "+" : ""}${points} points awarded. Total: ${updatedTeam.totalScore}`,
+          description: `${points > 0 ? "+" : ""}${points} points awarded. Total: ${newTotal}`,
         });
       } else {
         throw new Error("Failed to update score");
@@ -2203,15 +2210,49 @@ export default function ManageCompetitionPage() {
             case "escape":
               exitPresentationMode();
               break;
+            case "arrowleft":
+            case "[":
+              // Previous round
+              if (currentRoundIndex > 0) {
+                previousRound();
+              }
+              break;
+            case "arrowright":
+            case "]":
+              // Next round
+              const rounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
+              if (currentRoundIndex < rounds.length - 1) {
+                nextRound();
+              }
+              break;
           }
         }}
         className={`${
           isPresenting ? "block" : "hidden"
-        } fixed inset-0 bg-black text-white z-50 outline-none`}
+        } fixed inset-0 bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 text-white z-50 outline-none`}
       >
+        {/* Confetti Animation */}
+        {showConfetti && (
+          <div className="fixed inset-0 pointer-events-none z-[100]">
+            <div className="confetti-container">
+              {[...Array(50)].map((_, i) => (
+                <div
+                  key={i}
+                  className="confetti"
+                  style={{
+                    left: `${Math.random() * 100}%`,
+                    animationDelay: `${Math.random() * 3}s`,
+                    backgroundColor: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'][Math.floor(Math.random() * 6)]
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="h-full flex flex-col">
           {/* Presentation Header */}
-          <div className="bg-gray-900 p-4 flex justify-between items-center">
+          <div className="bg-gradient-to-r from-purple-800 to-blue-800 p-4 flex justify-between items-center shadow-lg">
             <div className="flex items-center space-x-6">
               <h1 className="text-2xl font-bold">{competition.name}</h1>
               <div className="flex items-center space-x-4 text-lg">
@@ -2228,7 +2269,7 @@ export default function ManageCompetitionPage() {
                   <>
                     <span className="text-gray-300">|</span>
                     <span className="text-white">
-                      Q{currentQuestionIndex + 1} - {roundType.toUpperCase()}
+                      Q{currentQuestionIndex + 1} of Q{questions.length} - {roundType.toUpperCase()}
                     </span>
                   </>
                 )}
@@ -2244,7 +2285,7 @@ export default function ManageCompetitionPage() {
                 onClick={() => setShowScoreModal(true)}
                 variant="outline"
                 size="sm"
-                className="bg-blue-600 text-white border-blue-600 hover:bg-blue-700 hover:border-blue-700"
+                className="bg-yellow-500 text-black border-yellow-500 hover:bg-yellow-400 hover:border-yellow-400 font-bold"
               >
                 Show Scores
               </Button>
@@ -2258,42 +2299,36 @@ export default function ManageCompetitionPage() {
             </div>
           </div>
 
+
           {/* Presentation Content */}
-          <div className="flex-1 flex">
-            {/* Left Side - Timer */}
-            <div className="w-1/4 bg-gray-800 flex flex-col items-center justify-center p-8">
-              <div className="text-center">
-                {/* Logo */}
-                <div className="mb-8"></div>
+          <div className="flex-1 flex flex-col">
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-8">
 
-                <div className="text-8xl font-mono font-bold text-cyan-400 mb-4">
-                  {Math.floor(timeLeft / 60)}:
-                  {(timeLeft % 60).toString().padStart(2, "0")}
-                </div>
-                <div className="text-2xl text-gray-300">Timer</div>
-              </div>
-            </div>
-
-            {/* Right Side - Main Content */}
-            <div className="flex-1 flex items-center justify-center p-8">
               {/* Show content based on round type and state */}
               {roundType === "rapid_fire" &&
               currentState === "options_shown" ? (
-                <div className="text-center">
-                  <h2 className="text-6xl font-bold mb-8 text-orange-400">
+                <div className="text-center space-y-8">
+                  <h2 className="text-8xl font-bold text-orange-400">
                     Rapid Fire Round
                   </h2>
-                  <p className="text-2xl text-gray-300">
+                  <p className="text-3xl text-gray-300">
                     Questions asked orally by anchor
                   </p>
+                  {/* Centered Timer for Rapid Fire */}
+                  <div className="text-9xl font-mono font-bold text-cyan-400">
+                    {Math.floor(timeLeft / 60)}:
+                    {(timeLeft % 60).toString().padStart(2, "0")}
+                  </div>
                 </div>
               ) : currentQuestion &&
                 (currentState === "question_shown" ||
                   currentState === "options_shown" ||
                   currentState === "timer_running" ||
                   currentState === "answer_shown") ? (
-                <div className="text-center max-w-4xl w-full">
-                  <h2 className="text-4xl font-bold mb-8 quiz-font">
+                <div className="text-center w-full space-y-8">
+                  {/* Question Text - Full Width */}
+                  <h2 className="text-6xl font-bold quiz-font leading-tight">
                     {currentQuestion.question}
                   </h2>
 
@@ -2376,18 +2411,18 @@ export default function ManageCompetitionPage() {
                       </div>
                     )}
 
-                  {/* MCQ Options in presentation - Always show structure */}
+                  {/* MCQ Options in presentation - Grid layout with full width */}
                   {(roundType === "mcq" ||
                     roundType === "media" ||
                     roundType === "buzzer") &&
                     currentQuestion?.options &&
                     currentState === "options_shown" && (
-                      <div className="grid grid-cols-2 gap-6 text-2xl">
+                      <div className="w-full grid grid-cols-2 gap-6">
                         {currentQuestion.options.map((option, index) => (
                           <div
                             key={index}
                             onClick={() => handleOptionSelect(option, index)}
-                            className={`border-2 rounded-lg p-6 cursor-pointer transition-colors ${
+                            className={`border-4 rounded-xl p-8 cursor-pointer transition-colors text-5xl font-bold ${
                               (typeof currentQuestion.correctAnswer === "string"
                                 ? option === currentQuestion.correctAnswer
                                 : index === currentQuestion.correctAnswer) &&
@@ -2399,17 +2434,28 @@ export default function ManageCompetitionPage() {
                                     ? option === currentQuestion.correctAnswer
                                     : index === currentQuestion.correctAnswer)
                                 ? "bg-red-600 border-red-400 text-white"
-                                : "border-gray-400 hover:border-blue-400 hover:bg-blue-50 hover:text-black"
+                                : "border-yellow-400 border-opacity-80 hover:border-yellow-300 hover:bg-yellow-200 hover:text-black bg-gray-800 bg-opacity-90 text-white"
                             }`}
                           >
-                            <span className="font-bold">
+                            <span className="font-bold text-5xl mr-4">
                               {String.fromCharCode(65 + index)}.
-                            </span>{" "}
-                            {option}
+                            </span>
+                            <span className="quiz-font text-5xl">{option}</span>
                           </div>
                         ))}
                       </div>
                     )}
+
+                  {/* Timer Display for Non-Rapid Fire Rounds */}
+                  {roundType !== "rapid_fire" && (currentState === "options_shown" || currentState === "timer_running") && (
+                    <div className="text-center">
+                      <div className="text-8xl font-mono font-bold text-cyan-400 mb-2">
+                        {Math.floor(timeLeft / 60)}:
+                        {(timeLeft % 60).toString().padStart(2, "0")}
+                      </div>
+                      <div className="text-2xl text-gray-300">Timer</div>
+                    </div>
+                  )}
 
                   {/* Buzzer Round Team Selection in Presentation */}
                   {roundType === "buzzer" &&
@@ -2575,8 +2621,8 @@ export default function ManageCompetitionPage() {
 
                   {/* Answer in presentation */}
                   {currentState === "answer_shown" && currentQuestion && (
-                    <div className="bg-green-600 border-2 border-green-400 rounded-lg p-8 text-3xl">
-                      <h3 className="font-bold mb-4 quiz-font">Correct Answer:</h3>
+                    <div className="bg-green-600 border-4 border-green-400 rounded-xl p-12 text-5xl">
+                      <h3 className="font-bold mb-6 quiz-font">Correct Answer:</h3>
                       <p className="quiz-font">
                         {typeof currentQuestion.correctAnswer === "string"
                           ? currentQuestion.correctAnswer
@@ -2587,7 +2633,7 @@ export default function ManageCompetitionPage() {
                     </div>
                   )}
                 </div>
-              ) : (
+                ) : (
                 <div className="text-center">
                   <h2 className="text-6xl font-bold mb-4">Ready</h2>
                   <p className="text-2xl text-gray-400">
@@ -2596,57 +2642,56 @@ export default function ManageCompetitionPage() {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Team Scores and Controls in presentation */}
-          {currentGroup && (
-            <div className="bg-gray-900 p-4">
-              <div className="flex justify-around items-center">
-                {currentGroup.teams.map((team) => (
-                  <div key={team._id} className="text-center">
-                    <h3 className="text-xl font-bold">{team.name}</h3>
-                    <p className="text-3xl font-mono font-bold mb-2">
-                      {teamScores[team._id] || 0}
-                    </p>
-                    {/* Quick scoring buttons in presentation */}
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          handleAwardPoints(
-                            team._id,
-                            currentQuestion?.points || 10
-                          )
-                        }
-                        disabled={!currentQuestion}
-                        className="text-xs px-2 py-1"
-                      >
-                        +{currentQuestion?.points || 10}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          handleAwardPoints(
-                            team._id,
-                            -(currentQuestion?.points || 10)
-                          )
-                        }
-                        disabled={!currentQuestion}
-                        className="text-xs px-2 py-1"
-                      >
-                        -{currentQuestion?.points || 10}
-                      </Button>
+            {/* Team Scores and Controls in presentation - Kid-friendly colors */}
+            {currentGroup && (
+              <div className="bg-gradient-to-r from-orange-500 to-pink-500 p-8 border-t-4 border-yellow-400">
+                <div className="flex justify-around items-center">
+                  {currentGroup.teams.map((team) => (
+                    <div key={team._id} className="text-center bg-black bg-opacity-40 rounded-xl p-6 backdrop-blur-sm border-2 border-white border-opacity-30">
+                      <h3 className="text-4xl font-bold mb-4 text-white">{team.name}</h3>
+                      <p className="text-6xl font-mono font-bold mb-4 text-yellow-300">
+                        {teamScores[team._id] || 0}
+                      </p>
+                      {/* Quick scoring buttons in presentation */}
+                      <div className="flex gap-2">
+                        <Button
+                          size="lg"
+                          onClick={() =>
+                            handleAwardPoints(
+                              team._id,
+                              currentQuestion?.points || 10
+                            )
+                          }
+                          disabled={!currentQuestion}
+                          className="text-lg px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-bold"
+                        >
+                          +{currentQuestion?.points || 10}
+                        </Button>
+                        <Button
+                          size="lg"
+                          onClick={() =>
+                            handleAwardPoints(
+                              team._id,
+                              -(currentQuestion?.points || 10)
+                            )
+                          }
+                          disabled={!currentQuestion}
+                          className="text-lg px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold"
+                        >
+                          -{currentQuestion?.points || 10}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Keyboard shortcuts hint */}
           <div className="absolute bottom-4 left-4 text-sm text-gray-400">
-            Q: Question | O: Options | A: Answer | T: Timer
+            Q: Question | O: Options | A: Answer | T: Timer | N: Next | ←/→: Rounds
           </div>
 
           {/* Score Display Modal - Inside presentation for presentation screen */}
@@ -2869,7 +2914,6 @@ export default function ManageCompetitionPage() {
         </Dialog>
       )}
 
-
       <audio ref={timerAudioRef} preload="auto">
         <source src="/15s_timer.mp3" type="audio/mpeg" />
       </audio>
@@ -2879,6 +2923,36 @@ export default function ManageCompetitionPage() {
       <audio ref={wrongAnswerAudioRef} preload="auto">
         <source src="/wrong_answer.mp3" type="audio/mpeg" />
       </audio>
+
+      {/* Confetti CSS */}
+      <style jsx>{`
+        .confetti-container {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          overflow: hidden;
+        }
+        
+        .confetti {
+          position: absolute;
+          width: 10px;
+          height: 10px;
+          animation: confetti-fall 3s linear infinite;
+        }
+        
+        @keyframes confetti-fall {
+          0% {
+            transform: translateY(-100vh) rotate(0deg);
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(100vh) rotate(720deg);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </div>
   );
 }
