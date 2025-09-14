@@ -98,18 +98,70 @@ export async function POST(
     }
 
     if (tieIssue) {
+      // Automatically create tiebreaker groups for semifinal tie at 3rd cutoff
+      const thirdScoreStartIndex = sortedTeams.findIndex((team: any) => (team.totalScore || 0) === thirdTeamScore);
+      // Compute last index manually for compatibility
+      let thirdScoreEndIndex = -1;
+      for (let i = sortedTeams.length - 1; i >= 0; i--) {
+        const score = (sortedTeams[i]?.totalScore || 0);
+        if (score === thirdTeamScore) { thirdScoreEndIndex = i; break; }
+      }
+
+      const tiedTeams = sortedTeams
+        .slice(thirdScoreStartIndex, thirdScoreEndIndex + 1)
+        .filter((team: any) => (team.totalScore || 0) === thirdTeamScore);
+
+      const tiedTeamIds = tiedTeams.map((t: any) => t._id);
+
+      // Replace current semifinal groups with dedicated tiebreaker groups
+      await Group.deleteMany({ competition: id });
+
+      const buildTiebreakerGroups = (teamIds: string[]) => {
+        const groups: { name: string; teams: string[] }[] = [];
+        if (teamIds.length === 4) {
+          groups.push({ name: 'Semifinal Tiebreaker A', teams: teamIds.slice(0, 2) });
+          groups.push({ name: 'Semifinal Tiebreaker B', teams: teamIds.slice(2, 4) });
+        } else if (teamIds.length === 3) {
+          groups.push({ name: 'Semifinal Tiebreaker', teams: teamIds.slice(0, 3) });
+        } else if (teamIds.length === 2) {
+          groups.push({ name: 'Semifinal Tiebreaker', teams: teamIds.slice(0, 2) });
+        } else {
+          // Fallback chunking
+          let i = 0;
+          let labelIdx = 0;
+          const label = () => String.fromCharCode('A'.charCodeAt(0) + (labelIdx++));
+          while (i < teamIds.length) {
+            const remaining = teamIds.length - i;
+            const size = remaining >= 3 ? 3 : remaining;
+            const chunk = teamIds.slice(i, i + size);
+            groups.push({ name: `Semifinal Tiebreaker ${label()}`.trim(), teams: chunk });
+            i += size;
+          }
+        }
+        return groups;
+      };
+
+      const groupData = buildTiebreakerGroups(tiedTeamIds).map((g) => ({
+        name: g.name,
+        teams: g.teams,
+        stage: 'semi_final' as const,
+        competition: id,
+        maxRounds: 1,
+      }));
+
+      const createdGroups = await Group.insertMany(groupData);
+
+      // Update competition to reflect tiebreakers
+      competition.groups = createdGroups.map((g: any) => g._id);
+      competition.currentStage = 'semi_final';
+      await competition.save();
+
       return NextResponse.json({
-        success: false,
-        requiresManualSelection: true,
-        error: `Manual selection required: ${tiedTeamsInfo.length} teams are tied with ${thirdTeamScore} points at the cutoff position.`,
-        tiedTeams: tiedTeamsInfo,
-        currentTop2: sortedTeams.filter((t: any) => (t.totalScore || 0) > thirdTeamScore).map((t: any) => ({
-          _id: t._id,
-          name: t.name,
-          score: t.totalScore || 0
-        })),
-        availableSlots: 3 - sortedTeams.filter((t: any) => (t.totalScore || 0) > thirdTeamScore).length
-      }, { status: 400 });
+        success: true,
+        tiebreakerCreated: true,
+        message: `Tie detected at 3rd place (score ${thirdTeamScore}). Created ${createdGroups.length} semifinal tiebreaker group(s). Conduct a 5-question buzzer round and run advancement again.`,
+        groups: createdGroups.map(g => ({ _id: g._id, name: g.name, teams: g.teams })),
+      });
     }
 
     // No ties affecting selection, proceed with top 3

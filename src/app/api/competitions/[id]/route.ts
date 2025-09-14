@@ -25,7 +25,7 @@ export async function GET(
     }
 
     const competition = await Competition.findById(id)
-      .select('name description startDate status currentPhase teams groups createdAt')
+      .select('name description startDate status currentStage teams groups createdAt')
       .populate({
         path: 'teams',
         model: Team,
@@ -123,7 +123,7 @@ export async function PUT(
       { name, description, status, currentStage, endDate },
       { new: true, runValidators: true }
     )
-      .select('name description startDate status currentPhase teams groups')
+      .select('name description startDate status currentStage teams groups')
       .populate({
         path: 'teams',
         select: 'name school totalScore',

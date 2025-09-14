@@ -174,7 +174,7 @@ export default function CompetitionsListPage() {
                     <TableCell>
                       <Badge className={getStatusColor(c.status)}>{c.status}</Badge>
                     </TableCell>
-                    <TableCell>{c.currentStage.replace('_', ' ')}</TableCell>
+                    <TableCell>{(c.currentStage?.replace('_', ' ') ?? 'group')}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Link href={`/competitions/${c._id}`}>

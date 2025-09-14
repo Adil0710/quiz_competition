@@ -99,6 +99,42 @@ export default function ManageCompetitionPage() {
       { name: "Visual Rapid Fire Round", type: "visual_rapid_fire" },
     ],
   };
+
+  // Detect tie groups based on total score and start tie-breaker if needed
+  const detectTieGroups = (): string[][] => {
+    if (!currentGroup) return [];
+    const scoreMap: Record<number, string[]> = {};
+    currentGroup.teams.forEach((team) => {
+      const score = teamScores[team._id] ?? team.totalScore ?? 0;
+      if (!scoreMap[score]) scoreMap[score] = [];
+      scoreMap[score].push(team._id);
+    });
+    const ties = Object.entries(scoreMap)
+      .map(([score, ids]) => ({ score: Number(score), ids }))
+      .filter((entry) => entry.ids.length >= 2)
+      .sort((a, b) => b.score - a.score) // Resolve highest-score ties first
+      .map((entry) => entry.ids);
+    return ties;
+  };
+
+  const startTieBreakerIfNeeded = (): boolean => {
+    const tieGroups = detectTieGroups();
+    if (tieGroups.length > 0) {
+      setTieBreakerMode(true);
+      setTieBreakerGroups(tieGroups);
+      setCurrentTieGroupIndex(0);
+      setRoundType("buzzer" as any);
+      resetQuestion();
+      setState("idle");
+      loadQuestions("buzzer", currentPhase); // will fetch 5 via getQuestionCount
+      toast({
+        title: "Tie-breaker Started",
+        description: `Detected ${tieGroups.length} tie group(s). Starting buzzer tie-breaker for ${tieGroups[0].length} team(s).`,
+      });
+      return true;
+    }
+    return false;
+  };
   const [competition, setCompetition] = useState<Competition | null>(null);
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,6 +148,29 @@ export default function ManageCompetitionPage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
+  const [showRoundSummaryModal, setShowRoundSummaryModal] = useState(false);
+  const [completedRoundInfo, setCompletedRoundInfo] = useState<{ name: string; type: string } | null>(null);
+  const [pendingNextRoundInfo, setPendingNextRoundInfo] = useState<{ name: string; type: string } | null>(null);
+  const [pendingNextRoundIndex, setPendingNextRoundIndex] = useState<number | null>(null);
+  // Tie-breaker state
+  const [tieBreakerMode, setTieBreakerMode] = useState(false);
+  const [tieBreakerGroups, setTieBreakerGroups] = useState<string[][]>([]);
+  const [currentTieGroupIndex, setCurrentTieGroupIndex] = useState(0);
+  const activeTieTeamIds: string[] = tieBreakerMode ? (tieBreakerGroups[currentTieGroupIndex] || []) : [];
+  // Global settings state
+  const [globalSettings, setGlobalSettings] = useState({
+    mcqPoints: 10,
+    mediaPoints: 10,
+    buzzerPoints: 10,
+    rapidFirePoints: 10,
+    sequencePoints: 10,
+    visualRapidFirePoints: 10,
+    mcqNegativeMarking: false,
+    mediaNegativeMarking: false,
+    rapidFireNegativeMarking: false,
+    sequenceNegativeMarking: false,
+    visualRapidFireNegativeMarking: false
+  });
 
   const presentRef = useRef<HTMLDivElement | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -185,8 +244,61 @@ export default function ManageCompetitionPage() {
   useEffect(() => {
     if (competitionId) {
       fetchCompetition();
+      loadGlobalSettings();
     }
   }, [competitionId]);
+
+  const loadGlobalSettings = async () => {
+    try {
+      const response = await fetch('/api/global-settings');
+      const data = await response.json();
+      if (data.success) {
+        setGlobalSettings(data.data);
+      }
+    } catch (error) {
+      console.error('Error loading global settings:', error);
+    }
+  };
+
+  // Get points for current round type from global settings
+  const getCurrentRoundPoints = () => {
+    switch (roundType) {
+      case "mcq":
+        return globalSettings.mcqPoints;
+      case "media":
+        return globalSettings.mediaPoints;
+      case "buzzer":
+        return globalSettings.buzzerPoints;
+      case "rapid_fire":
+        return globalSettings.rapidFirePoints;
+      case "sequence":
+        return globalSettings.sequencePoints;
+      case "visual_rapid_fire":
+        return globalSettings.visualRapidFirePoints;
+      default:
+        return 10;
+    }
+  };
+
+  // Get negative marking setting for current round type
+  const getCurrentRoundNegativeMarking = () => {
+    switch (roundType) {
+      case "mcq":
+        return globalSettings.mcqNegativeMarking;
+      case "media":
+        return globalSettings.mediaNegativeMarking;
+      case "rapid_fire":
+        return globalSettings.rapidFireNegativeMarking;
+      case "sequence":
+        return globalSettings.sequenceNegativeMarking;
+      case "visual_rapid_fire":
+        return globalSettings.visualRapidFireNegativeMarking;
+      case "buzzer":
+        return false; // Buzzer always manual control
+      default:
+        return false;
+    }
+  };
 
   // Initialize first round when competition loads
   useEffect(() => {
@@ -880,6 +992,29 @@ export default function ManageCompetitionPage() {
 
     // Check if we've reached the end of questions for this round type
     if (nextIndex >= questions.length) {
+      // Handle tie-breaker group progression first
+      if (tieBreakerMode) {
+        const hasMoreTieGroups = currentTieGroupIndex < tieBreakerGroups.length - 1;
+        if (hasMoreTieGroups) {
+          // Move to next tie group with fresh 5 buzzer questions
+          setCurrentTieGroupIndex(currentTieGroupIndex + 1);
+          resetRound();
+          setSelectedTeam(null);
+          setState("idle");
+          setRoundType("buzzer" as any);
+          loadQuestions("buzzer", currentPhase);
+        } else {
+          // All tie groups processed — end tie-breakers and show summary
+          setTieBreakerMode(false);
+          setTieBreakerGroups([]);
+          setCurrentTieGroupIndex(0);
+          resetQuestion();
+          setState("idle");
+          setShowGroupSummaryModal(true);
+        }
+        return;
+      }
+
       const currentPhaseRounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
       const currentRoundIndexInPhase = currentPhaseRounds.findIndex(
         (r) => r.type === roundType
@@ -887,27 +1022,28 @@ export default function ManageCompetitionPage() {
       const nextRound = currentPhaseRounds[currentRoundIndexInPhase + 1];
 
       if (nextRound) {
-        toast({
-          title: "Round Complete",
-          description: `All ${roundType} questions completed! Moving to ${nextRound.type} round.`,
-        });
-
-        // Update round index and type in sync
-        setCurrentRoundIndex(currentRoundIndexInPhase + 1);
-        setRoundType(nextRound.type as any);
-        
-        // Load questions for next round type
-        loadQuestions(nextRound.type, currentPhase);
-      } else {
-        // All rounds completed for this phase
-        toast({
-          title: "Phase Complete",
-          description: `All rounds in ${currentPhase} phase completed!`,
-        });
+        // Show round summary modal before advancing
+        setCompletedRoundInfo(currentPhaseRounds[currentRoundIndexInPhase]);
+        setPendingNextRoundInfo(nextRound);
+        setPendingNextRoundIndex(currentRoundIndexInPhase + 1);
+        setShowRoundSummaryModal(true);
+        // Reset display state
         resetQuestion();
         setState("idle");
-        if (currentPhase === "league" && roundType === "buzzer") {
-          setShowGroupSummaryModal(true);
+      } else {
+        // All rounds completed for this phase
+        // Attempt to start tie-breakers automatically if any ties exist
+        const started = startTieBreakerIfNeeded();
+        if (!started) {
+          toast({
+            title: "Phase Complete",
+            description: `All rounds in ${currentPhase} phase completed!`,
+          });
+          resetQuestion();
+          setState("idle");
+          if (currentPhase === "league" && roundType === "buzzer") {
+            setShowGroupSummaryModal(true);
+          }
         }
       }
       return;
@@ -950,6 +1086,10 @@ export default function ManageCompetitionPage() {
   };
 
   const handleAwardPoints = async (teamId: string, points: number) => {
+    // Use global settings points instead of passed points
+    const globalPoints = getCurrentRoundPoints();
+    let finalPoints = globalPoints;
+
     // Only award points if an option was selected and it's correct
     if (roundType === "mcq" && selectedOption === null) {
       toast({
@@ -960,14 +1100,46 @@ export default function ManageCompetitionPage() {
       return;
     }
 
-    // For MCQ, check if the selected answer is correct
+    // For MCQ, check if the selected answer is correct and apply negative marking
     if (roundType === "mcq" && !isOptionCorrect) {
-      toast({
-        title: "Incorrect Answer",
-        description: "No points awarded for wrong answer",
-        variant: "destructive",
-      });
-      return;
+      if (getCurrentRoundNegativeMarking()) {
+        finalPoints = -globalPoints; // Negative marking
+      } else {
+        toast({
+          title: "Incorrect Answer",
+          description: "No points awarded for wrong answer",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // For other round types, check if we have a wrong answer scenario and apply negative marking
+    if (roundType !== "mcq" && roundType !== "buzzer") {
+      // For media, rapid_fire, sequence, visual_rapid_fire - check if answer is wrong and negative marking is enabled
+      const hasWrongAnswer = (
+        (roundType === "media" && selectedOption !== null && !isOptionCorrect) ||
+        (roundType === "rapid_fire" && selectedOption !== null && !isOptionCorrect) ||
+        (roundType === "sequence" && selectedOption !== null && !isOptionCorrect) ||
+        (roundType === "visual_rapid_fire" && selectedOption !== null && !isOptionCorrect)
+      );
+      
+      if (hasWrongAnswer && getCurrentRoundNegativeMarking()) {
+        finalPoints = -globalPoints; // Negative marking for wrong answers
+      } else if (hasWrongAnswer && !getCurrentRoundNegativeMarking()) {
+        // Wrong answer but no negative marking - don't award points
+        toast({
+          title: "Incorrect Answer",
+          description: "No points awarded for wrong answer",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // For buzzer round, use the passed points (can be positive or negative)
+    if (roundType === "buzzer") {
+      finalPoints = points; // Keep original behavior for buzzer
     }
 
     try {
@@ -975,7 +1147,7 @@ export default function ManageCompetitionPage() {
       const response = await fetch(`/api/teams/${teamId}/score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points }),
+        body: JSON.stringify({ points: finalPoints }),
       });
 
       if (response.ok) {
@@ -996,7 +1168,7 @@ export default function ManageCompetitionPage() {
 
         toast({
           title: "Points Awarded",
-          description: `${points > 0 ? "+" : ""}${points} points awarded. Total: ${newTotal}`,
+          description: `${finalPoints > 0 ? "+" : ""}${finalPoints} points awarded. Total: ${newTotal}`,
         });
       } else {
         throw new Error("Failed to update score");
@@ -1018,6 +1190,20 @@ export default function ManageCompetitionPage() {
       if (!currentBuzzerTeam) {
         selectBuzzerTeam(teamId);
       }
+    }
+  };
+
+  const handleContinueToNextRound = () => {
+    if (pendingNextRoundInfo && pendingNextRoundIndex !== null) {
+      setCurrentRoundIndex(pendingNextRoundIndex);
+      setRoundType(pendingNextRoundInfo.type as any);
+      loadQuestions(pendingNextRoundInfo.type, currentPhase);
+      setShowRoundSummaryModal(false);
+      setCompletedRoundInfo(null);
+      setPendingNextRoundInfo(null);
+      setPendingNextRoundIndex(null);
+    } else {
+      setShowRoundSummaryModal(false);
     }
   };
 
@@ -1088,12 +1274,13 @@ export default function ManageCompetitionPage() {
       toggleCorrectAnswer(); // Show correct answer feedback
     }
 
+    const buzzerPoints = getCurrentRoundPoints();
     if (selectedTeam && isCorrect) {
       // Award points for correct answer via API
-      await handleAwardPoints(selectedTeam, currentQuestion.points);
+      await handleAwardPoints(selectedTeam, buzzerPoints);
     } else if (selectedTeam && !isCorrect) {
       // Deduct points for wrong answer in buzzer round via API
-      await handleAwardPoints(selectedTeam, -currentQuestion.points);
+      await handleAwardPoints(selectedTeam, -buzzerPoints);
     }
   };
 
@@ -1925,7 +2112,7 @@ export default function ManageCompetitionPage() {
                         onClick={() =>
                           handleAwardPoints(
                             team._id,
-                            currentQuestion?.points || 10
+                            getCurrentRoundPoints()
                           )
                         }
                         disabled={
@@ -1935,24 +2122,26 @@ export default function ManageCompetitionPage() {
                             !isOptionCorrect)
                         }
                       >
-                        +{currentQuestion?.points || 10}
+                        +{getCurrentRoundPoints()}
                         {roundType === "mcq" &&
                           selectedOption !== null &&
                           (isOptionCorrect ? " ✓" : " ✗")}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() =>
-                          handleAwardPoints(
-                            team._id,
-                            -(currentQuestion?.points || 10)
-                          )
-                        }
-                        disabled={!currentQuestion}
-                      >
-                        -{currentQuestion?.points || 10}
-                      </Button>
+                      {(roundType === "buzzer" || getCurrentRoundNegativeMarking()) && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            handleAwardPoints(
+                              team._id,
+                              -getCurrentRoundPoints()
+                            )
+                          }
+                          disabled={!currentQuestion}
+                        >
+                          -{getCurrentRoundPoints()}
+                        </Button>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -1965,6 +2154,7 @@ export default function ManageCompetitionPage() {
         {!isPresenting && (
           <Dialog open={showScoreModal} onOpenChange={setShowScoreModal}>
             <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+
               <DialogHeader>
                 <DialogTitle className="flex items-center">
                   <Trophy className="w-5 h-5 mr-2" />
@@ -2059,6 +2249,66 @@ export default function ManageCompetitionPage() {
 
               <DialogFooter>
                 <Button onClick={() => setShowScoreModal(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Round Summary Modal - Admin screen */}
+        {!isPresenting && (
+          <Dialog open={showRoundSummaryModal} onOpenChange={setShowRoundSummaryModal}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center">
+                  <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
+                  {(completedRoundInfo?.name || completedRoundInfo?.type?.toString().toUpperCase() || "Round")} Complete - {currentPhase === "league" ? "League" : currentPhase === "semi_final" ? "Semi-Final" : "Final"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                  <p className="text-indigo-800">
+                    Great job! Here's the current standing for <span className="font-semibold">{currentGroup?.name}</span> after this round.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {currentGroup?.teams
+                    ?.map((team) => ({
+                      ...team,
+                      score: teamScores[team._id] ?? team.totalScore ?? 0,
+                    }))
+                    ?.sort((a, b) => b.score - a.score)
+                    ?.map((team, index) => (
+                      <div
+                        key={team._id}
+                        className={`flex justify-between items-center p-4 rounded-lg border ${
+                          index === 0
+                            ? "bg-yellow-50 border-yellow-300"
+                            : index === 1
+                            ? "bg-gray-50 border-gray-300"
+                            : index === 2
+                            ? "bg-orange-50 border-orange-300"
+                            : "bg-white border-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center">
+                          <span className="text-2xl mr-3">
+                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                          </span>
+                          <div>
+                            <h4 className="font-semibold">{team.name}</h4>
+                            <p className="text-sm text-gray-600">{team.school.name}</p>
+                          </div>
+                        </div>
+                        <div className="text-2xl font-bold text-blue-600">{team.score}</div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <DialogFooter className="flex gap-3">
+                <Button variant="outline" onClick={() => setShowRoundSummaryModal(false)}>Close</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleContinueToNextRound}>
+                  Continue to Next Round
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -2231,6 +2481,63 @@ export default function ManageCompetitionPage() {
           isPresenting ? "block" : "hidden"
         } fixed inset-0 bg-gradient-to-br from-blue-900 via-purple-900 to-indigo-900 text-white z-50 outline-none`}
       >
+        {/* Round Summary Modal - Presentation overlay */}
+        {isPresenting && showRoundSummaryModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[80] p-6">
+            <div className="bg-gradient-to-br from-indigo-700 to-purple-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
+                <h2 className="text-3xl font-bold">
+                  {(completedRoundInfo?.name || completedRoundInfo?.type?.toString().toUpperCase() || "Round")} Complete - {currentPhase === "league" ? "League" : currentPhase === "semi_final" ? "Semi-Final" : "Final"}
+                </h2>
+              </div>
+              <p className="text-center text-lg text-indigo-100 mb-6">
+                Current standings for <span className="font-semibold text-white">{currentGroup?.name}</span>
+              </p>
+              <div className="space-y-3">
+                {currentGroup?.teams
+                  ?.map((team) => ({
+                    ...team,
+                    score: teamScores[team._id] ?? team.totalScore ?? 0,
+                  }))
+                  ?.sort((a, b) => b.score - a.score)
+                  ?.map((team, index) => (
+                    <div
+                      key={team._id}
+                      className={`flex justify-between items-center p-4 rounded-xl border-2 ${
+                        index === 0
+                          ? "bg-yellow-500/20 border-yellow-300"
+                          : index === 1
+                          ? "bg-gray-500/20 border-gray-300"
+                          : index === 2
+                          ? "bg-orange-500/20 border-orange-300"
+                          : "bg-white/10 border-white/20"
+                      }`}
+                    >
+                      <div className="flex items-center">
+                        <span className="text-3xl mr-4">
+                          {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                        </span>
+                        <div>
+                          <h4 className="text-2xl font-bold text-white">{team.name}</h4>
+                          <p className="text-sm text-indigo-200">{team.school.name}</p>
+                        </div>
+                      </div>
+                      <div className="text-3xl font-extrabold text-yellow-300">{team.score}</div>
+                    </div>
+                  ))}
+              </div>
+              <div className="mt-8 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowRoundSummaryModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">
+                  Close
+                </Button>
+                <Button onClick={handleContinueToNextRound} className="bg-blue-500 hover:bg-blue-600 text-white">
+                  Continue to Next Round
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Confetti Animation */}
         {showConfetti && (
           <div className="fixed inset-0 pointer-events-none z-[100]">
@@ -2263,6 +2570,12 @@ export default function ManageCompetitionPage() {
                     ? "Semi-Final"
                     : "Final"}
                 </Badge>
+                {tieBreakerMode && (
+                  <Badge className="px-3 py-1 bg-red-500 hover:bg-red-600">Tie-breaker</Badge>
+                )}
+                {getCurrentRoundNegativeMarking() && (
+                  <Badge className="px-3 py-1 bg-orange-500 hover:bg-orange-600">Negative Marking</Badge>
+                )}
                 <span className="text-gray-300">|</span>
                 <span className="text-white">{currentGroup?.name}</span>
                 {currentQuestion && (
@@ -2328,9 +2641,11 @@ export default function ManageCompetitionPage() {
                   currentState === "answer_shown") ? (
                 <div className="text-center w-full space-y-8">
                   {/* Question Text - Full Width */}
-                  <h2 className="text-6xl font-bold quiz-font leading-tight">
-                    {currentQuestion.question}
-                  </h2>
+                  {!(roundType === "media" && currentState === "options_shown") && (
+                    <h2 className="text-6xl font-bold quiz-font leading-tight">
+                      {currentQuestion.question}
+                    </h2>
+                  )}
 
                   {/* Media removed from here - only show on O press */}
                   {/* Media Display */}
@@ -2412,9 +2727,7 @@ export default function ManageCompetitionPage() {
                     )}
 
                   {/* MCQ Options in presentation - Grid layout with full width */}
-                  {(roundType === "mcq" ||
-                    roundType === "media" ||
-                    roundType === "buzzer") &&
+                  {roundType === "mcq" &&
                     currentQuestion?.options &&
                     currentState === "options_shown" && (
                       <div className="w-full grid grid-cols-2 gap-6">
@@ -2461,24 +2774,18 @@ export default function ManageCompetitionPage() {
                   {roundType === "buzzer" &&
                     currentState === "options_shown" && (
                       <div className="mt-8 space-y-6">
-                        <div className="bg-yellow-100 border-2 border-yellow-300 rounded-lg p-6 text-center">
-                          <h3 className="text-yellow-800 font-bold text-3xl mb-2">
-                            🔔 Buzzer Round
-                          </h3>
-                          <p className="text-yellow-700 text-xl">
-                            Select the team that buzzed first
-                          </p>
-                        </div>
-
                         <div className="grid grid-cols-3 gap-6">
-                          {currentGroup?.teams?.map((team) => (
+                          {(tieBreakerMode
+                            ? currentGroup?.teams?.filter((team) => activeTieTeamIds.includes(team._id))
+                            : currentGroup?.teams
+                          )?.map((team) => (
                             <div
                               key={team._id}
                               onClick={() => setSelectedTeam(team._id)}
                               className={`border-2 rounded-lg p-6 text-center cursor-pointer transition-colors ${
                                 selectedTeam === team._id
                                   ? "bg-blue-500 border-blue-400 text-white"
-                                  : "border-gray-400 hover:border-blue-400 bg-white"
+                                  : "border-gray-400 hover:border-blue-400 bg-white text-black"
                               }`}
                             >
                               <div className="font-bold text-2xl">
@@ -2494,19 +2801,6 @@ export default function ManageCompetitionPage() {
                         {/* Answer Options after team selection */}
                         {selectedTeam && currentQuestion.options && (
                           <div className="mt-6">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-center">
-                              <p className="text-blue-800 font-medium text-xl">
-                                Selected Team:{" "}
-                                {
-                                  currentGroup?.teams?.find(
-                                    (t) => t._id === selectedTeam
-                                  )?.name
-                                }
-                              </p>
-                              <p className="text-blue-700">
-                                Now select their answer:
-                              </p>
-                            </div>
                             <div className="grid grid-cols-2 gap-4">
                               {currentQuestion.options.map((option, index) => (
                                 <div
@@ -2526,7 +2820,7 @@ export default function ManageCompetitionPage() {
                                         )
                                         ? "bg-green-500 border-green-400 text-white"
                                         : "bg-red-500 border-red-400 text-white"
-                                      : "border-gray-400 hover:border-blue-400 hover:bg-blue-50 hover:text-black"
+                                        : "border-gray-400 bg-white text-black hover:border-blue-400 hover:bg-blue-50 hover:text-black"
                                   }`}
                                 >
                                   <span className="quiz-font">{String.fromCharCode(65 + index)}. {option}</span>
@@ -2647,7 +2941,10 @@ export default function ManageCompetitionPage() {
             {currentGroup && (
               <div className="bg-gradient-to-r from-orange-500 to-pink-500 p-8 border-t-4 border-yellow-400">
                 <div className="flex justify-around items-center">
-                  {currentGroup.teams.map((team) => (
+                  {(tieBreakerMode
+                    ? currentGroup.teams?.filter((team) => activeTieTeamIds.includes(team._id))
+                    : currentGroup.teams
+                  )?.map((team) => (
                     <div key={team._id} className="text-center bg-black bg-opacity-40 rounded-xl p-6 backdrop-blur-sm border-2 border-white border-opacity-30">
                       <h3 className="text-4xl font-bold mb-4 text-white">{team.name}</h3>
                       <p className="text-6xl font-mono font-bold mb-4 text-yellow-300">
@@ -2660,27 +2957,36 @@ export default function ManageCompetitionPage() {
                           onClick={() =>
                             handleAwardPoints(
                               team._id,
-                              currentQuestion?.points || 10
+                              getCurrentRoundPoints()
                             )
                           }
-                          disabled={!currentQuestion}
+                          disabled={
+                            !currentQuestion ||
+                            (roundType === "mcq" && selectedOption !== null && !isOptionCorrect) ||
+                            (tieBreakerMode && !activeTieTeamIds.includes(team._id))
+                          }
                           className="text-lg px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-bold"
                         >
-                          +{currentQuestion?.points || 10}
+                          +{getCurrentRoundPoints()}
+                          {roundType === "mcq" && selectedOption !== null && (
+                            isOptionCorrect ? " ✓" : " ✗"
+                          )}
                         </Button>
-                        <Button
-                          size="lg"
-                          onClick={() =>
-                            handleAwardPoints(
-                              team._id,
-                              -(currentQuestion?.points || 10)
-                            )
-                          }
-                          disabled={!currentQuestion}
-                          className="text-lg px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold"
-                        >
-                          -{currentQuestion?.points || 10}
-                        </Button>
+                        {(roundType === "buzzer" || getCurrentRoundNegativeMarking()) && (
+                          <Button
+                            size="lg"
+                            onClick={() =>
+                              handleAwardPoints(
+                                team._id,
+                                -getCurrentRoundPoints()
+                              )
+                            }
+                            disabled={!currentQuestion || (tieBreakerMode && !activeTieTeamIds.includes(team._id))}
+                            className="text-lg px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold"
+                          >
+                            -{getCurrentRoundPoints()}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}

@@ -109,28 +109,101 @@ export async function POST(
     }
 
     if (tieIssue) {
+      // Automatically create tiebreaker groups and instruct to run a 5-question buzzer round
+      const ninthScoreStartIndex = sortedTeams.findIndex((team: any) => (team.totalScore || 0) === ninthTeamScore);
+      // Compute last index manually for compatibility
+      let ninthScoreEndIndex = -1;
+      for (let i = sortedTeams.length - 1; i >= 0; i--) {
+        const score = (sortedTeams[i]?.totalScore || 0);
+        if (score === ninthTeamScore) { ninthScoreEndIndex = i; break; }
+      }
+
+      const tiedTeams = sortedTeams
+        .slice(ninthScoreStartIndex, ninthScoreEndIndex + 1)
+        .filter((team: any) => (team.totalScore || 0) === ninthTeamScore);
+
+      const tiedTeamIds = tiedTeams.map((t: any) => t._id);
+
+      // Remove existing groups and create dedicated tiebreaker groups
+      await Group.deleteMany({ competition: id });
+
+      const buildTiebreakerGroups = (teamIds: string[]) => {
+        const groups: { name: string; teams: string[] }[] = [];
+        if (teamIds.length === 4) {
+          groups.push({ name: 'Tiebreaker Group A', teams: teamIds.slice(0, 2) });
+          groups.push({ name: 'Tiebreaker Group B', teams: teamIds.slice(2, 4) });
+          return groups;
+        }
+        if (teamIds.length === 3) {
+          groups.push({ name: 'Tiebreaker Group', teams: teamIds.slice(0, 3) });
+          return groups;
+        }
+        if (teamIds.length === 2) {
+          groups.push({ name: 'Tiebreaker Group', teams: teamIds.slice(0, 2) });
+          return groups;
+        }
+
+        // Generic: prefer chunks of 3, but when remaining % 3 === 1 use a chunk of 2 to avoid a 1-sized group
+        let i = 0;
+        let labelIdx = 0;
+        const label = () => String.fromCharCode('A'.charCodeAt(0) + (labelIdx++));
+        while (i < teamIds.length) {
+          const remaining = teamIds.length - i;
+          let size = 3;
+          if (remaining % 3 === 1 && remaining >= 4) {
+            size = 2;
+          } else if (remaining < 3) {
+            size = remaining; // 2
+          }
+          const chunk = teamIds.slice(i, i + size);
+          groups.push({ name: `Tiebreaker Group ${label()}`.trim(), teams: chunk });
+          i += size;
+        }
+        return groups;
+      };
+
+      const groupData = buildTiebreakerGroups(tiedTeamIds).map((g) => ({
+        name: g.name,
+        teams: g.teams,
+        stage: 'group' as const,
+        competition: id,
+        maxRounds: 1,
+      }));
+
+      const createdGroups = await Group.insertMany(groupData);
+
+      // Update competition to reflect tiebreaker groups so UI can manage them
+      competition.groups = createdGroups.map((g: any) => g._id);
+      competition.currentStage = 'group';
+      await competition.save();
+
       return NextResponse.json({
-        success: false,
-        requiresManualSelection: true,
-        error: `Manual selection required: ${tiedTeamsInfo.length} teams are tied with ${ninthTeamScore} points at the cutoff position.`,
-        tiedTeams: tiedTeamsInfo,
-        currentTop8: sortedTeams.filter((t: any) => (t.totalScore || 0) > ninthTeamScore).map((t: any) => ({
-          _id: t._id,
-          name: t.name,
-          score: t.totalScore || 0
-        })),
-        availableSlots: 9 - sortedTeams.filter((t: any) => (t.totalScore || 0) > ninthTeamScore).length
-      }, { status: 400 });
+        success: true,
+        tiebreakerCreated: true,
+        message: `Tie detected at 9th place (score ${ninthTeamScore}). Created ${createdGroups.length} tiebreaker group(s). Conduct a 5-question buzzer round and run advancement again.`,
+        groups: createdGroups.map(g => ({ _id: g._id, name: g.name, teams: g.teams })),
+      });
     }
 
     // No ties affecting selection, proceed with top 9
     const topTeams = sortedTeams.slice(0, 9);
 
-    // Reset scores for top 9 teams
+    // Reset scores for top 9 teams and update stages
     await Team.updateMany(
       { _id: { $in: topTeams.map((t: any) => t._id) } },
-      { $set: { totalScore: 0 } }
+      { $set: { totalScore: 0, currentStage: 'semi_final' } }
     );
+
+    // Mark eliminated teams (those not in top 9)
+    const eliminatedIds = validTeams
+      .filter((t: any) => !topTeams.find((tt: any) => String(tt._id) === String(t._id)))
+      .map((t: any) => t._id);
+    if (eliminatedIds.length > 0) {
+      await Team.updateMany(
+        { _id: { $in: eliminatedIds } },
+        { $set: { currentStage: 'eliminated' } }
+      );
+    }
 
     // Delete existing groups
     await Group.deleteMany({ competition: id });

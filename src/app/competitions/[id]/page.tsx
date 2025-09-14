@@ -62,6 +62,7 @@ export default function CompetitionDetailsPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resettingScores, setResettingScores] = useState(false);
+  const [resettingCompetition, setResettingCompetition] = useState(false);
   const [creatingMode, setCreatingMode] = useState<null | "auto" | "manual">(
     null
   );
@@ -159,6 +160,38 @@ export default function CompetitionDetailsPage() {
     }
   };
 
+  const handleResetCompetition = async () => {
+    try {
+      setResettingCompetition(true);
+      const res = await fetch(`/api/competitions/${competitionId}/reset`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({
+          title: "Competition Reset",
+          description:
+            "Competition returned to group stage. All scores cleared and groups deleted.",
+        });
+        fetchCompetition();
+      } else {
+        toast({
+          title: "Failed",
+          description: data.error || "Could not reset competition",
+          variant: "destructive",
+        });
+      }
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: "Failed to reset competition",
+        variant: "destructive",
+      });
+    } finally {
+      setResettingCompetition(false);
+    }
+  };
+
   const handleUpdate = async () => {
     try {
       setSaving(true);
@@ -241,7 +274,13 @@ export default function CompetitionDetailsPage() {
       );
 
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.tiebreakerCreated) {
+        toast({
+          title: "Tiebreaker Created",
+          description: `${data.groups?.length || 1} tiebreaker group(s) created. Conduct a 5-question buzzer round for these groups, then click Next Phase again.`,
+        });
+        fetchCompetition();
+      } else if (data.success) {
         toast({
           title: "Success",
           description: "Top 9 teams advanced to semifinal phase",
@@ -281,7 +320,13 @@ export default function CompetitionDetailsPage() {
       );
 
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.tiebreakerCreated) {
+        toast({
+          title: "Semifinal Tiebreaker Created",
+          description: `${data.groups?.length || 1} semifinal tiebreaker group(s) created. Conduct a 5-question buzzer round, then click Next Phase again.`,
+        });
+        fetchCompetition();
+      } else if (data.success) {
         toast({
           title: "Success",
           description: "Top 3 teams advanced to final phase",
@@ -386,6 +431,19 @@ export default function CompetitionDetailsPage() {
       default:
         return "bg-gray-500";
     }
+  };
+
+  // Helper to compute current stage's participating teams count
+  const getCurrentStageTeams = () => {
+    if (!competition) return [] as any[];
+    if (competition.currentStage === "group") {
+      return competition.teams || [];
+    }
+    // For semifinal/final, pull teams from groups
+    return (competition.groups || []).reduce((arr: any[], g: any) => {
+      const groupTeams = (g?.teams || []).filter(Boolean);
+      return arr.concat(groupTeams);
+    }, []);
   };
 
   if (loading) {
@@ -550,6 +608,40 @@ export default function CompetitionDetailsPage() {
             ) : null}
             Reset Scores
           </Button>
+          {/* Reset Competition (scores + groups + stage) */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={resettingCompetition}>
+                {resettingCompetition ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Reset Competition
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset entire competition?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will delete all groups, reset all scores to 0, and set the
+                  stage back to group. You will need to create groups again.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={resettingCompetition}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleResetCompetition}
+                  disabled={resettingCompetition}
+                >
+                  {resettingCompetition ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {/* Edit */}
           <AlertDialog open={editOpen} onOpenChange={setEditOpen}>
             <AlertDialogTrigger asChild>
@@ -755,32 +847,49 @@ export default function CompetitionDetailsPage() {
                       : "Teams competing in final round (sorted by total score)"}
                   </CardDescription>
                 </div>
-                {competition.currentStage === "group" &&
-                  competition.teams.length >= 9 && (
-                    <Button
-                      onClick={handleAdvanceToSemifinal}
-                      disabled={advancingSemifinal}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      {advancingSemifinal ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : null}
-                      Advance Top 9 to Semifinal
-                    </Button>
-                  )}
-                {competition.currentStage === "semi_final" &&
-                  competition.teams.length >= 3 && (
-                    <Button
-                      onClick={handleAdvanceToFinal}
-                      disabled={advancingFinal}
-                      className="bg-purple-600 hover:bg-purple-700"
-                    >
-                      {advancingFinal ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : null}
-                      Advance Top 3 to Final
-                    </Button>
-                  )}
+                {(() => {
+                  const teamsNow = getCurrentStageTeams();
+                  const canAdvanceToSemifinal =
+                    competition.status === "ongoing" &&
+                    competition.currentStage === "group" &&
+                    teamsNow.length >= 9;
+                  const canAdvanceToFinal =
+                    competition.status === "ongoing" &&
+                    competition.currentStage === "semi_final" &&
+                    teamsNow.length >= 3;
+
+                  if (canAdvanceToSemifinal) {
+                    return (
+                      <Button
+                        onClick={handleAdvanceToSemifinal}
+                        disabled={advancingSemifinal}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {advancingSemifinal ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Next Phase (Semifinal)
+                      </Button>
+                    );
+                  }
+
+                  if (canAdvanceToFinal) {
+                    return (
+                      <Button
+                        onClick={handleAdvanceToFinal}
+                        disabled={advancingFinal}
+                        className="bg-purple-600 hover:bg-purple-700"
+                      >
+                        {advancingFinal ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Next Phase (Final)
+                      </Button>
+                    );
+                  }
+
+                  return null;
+                })()}
               </div>
             </CardHeader>
             <CardContent>
