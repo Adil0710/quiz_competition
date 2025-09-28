@@ -100,6 +100,24 @@ export default function ManageCompetitionPage() {
     ],
   };
 
+  
+
+  // Default timer durations per round for T key toggle
+  const getDefaultRoundDuration = () => {
+    switch (roundType) {
+      case "mcq":
+      case "media":
+      case "buzzer":
+        return 15;
+      case "rapid_fire":
+      case "sequence":
+      case "visual_rapid_fire":
+        return 60;
+      default:
+        return 15;
+    }
+  };
+
   // Detect tie groups based on total score and start tie-breaker if needed
   const detectTieGroups = (): string[][] => {
     if (!currentGroup) return [];
@@ -149,6 +167,9 @@ export default function ManageCompetitionPage() {
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
   const [showRoundSummaryModal, setShowRoundSummaryModal] = useState(false);
+  const [showFinalWinnerModal, setShowFinalWinnerModal] = useState(false);
+  const [winnerRevealed, setWinnerRevealed] = useState(false);
+  const [finalWinnerTeamId, setFinalWinnerTeamId] = useState<string | null>(null);
   const [completedRoundInfo, setCompletedRoundInfo] = useState<{ name: string; type: string } | null>(null);
   const [pendingNextRoundInfo, setPendingNextRoundInfo] = useState<{ name: string; type: string } | null>(null);
   const [pendingNextRoundIndex, setPendingNextRoundIndex] = useState<number | null>(null);
@@ -212,6 +233,7 @@ export default function ManageCompetitionPage() {
     setCurrentQuestion,
     setQuestions,
     nextQuestion,
+    prevQuestion,
     startTimer,
     stopTimer,
     updateTimer,
@@ -442,6 +464,11 @@ export default function ManageCompetitionPage() {
           break;
         case "a":
           console.log("A key detected");
+          // Final winner reveal gate
+          if (showFinalWinnerModal && !winnerRevealed) {
+            revealFinalWinner();
+            break;
+          }
           if (currentQuestion) {
             if (roundType === "sequence" && showSequenceModal) {
               // Handle sequence reveal step by step
@@ -464,6 +491,14 @@ export default function ManageCompetitionPage() {
             stopAllAudio();
             setState("idle");
             handleNextQuestion();
+          }
+          break;
+        case "p":
+          console.log("P key detected - previous question");
+          if (currentQuestionIndex > 0) {
+            stopAllAudio();
+            setState("idle");
+            handlePrevQuestion();
           }
           break;
         default:
@@ -499,6 +534,85 @@ export default function ManageCompetitionPage() {
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, [setPresenting]);
+
+  // Fire confetti when round/group summary modals open
+  useEffect(() => {
+    if (showRoundSummaryModal) {
+      fireSideConfetti();
+    }
+  }, [showRoundSummaryModal]);
+
+  useEffect(() => {
+    if (showGroupSummaryModal) {
+      fireSideConfetti();
+    }
+  }, [showGroupSummaryModal]);
+
+  useEffect(() => {
+    if (showFinalWinnerModal) {
+      fireSideConfetti();
+    }
+  }, [showFinalWinnerModal]);
+
+  // Load canvas-confetti from CDN so we don't need a local dependency
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src =
+      "https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  // Confetti helpers
+  const getConfetti = () =>
+    (typeof window !== "undefined" && (window as any).confetti) || null;
+
+  const fireSideConfetti = () => {
+    const confetti = getConfetti();
+    if (!confetti) return;
+    confetti({
+      particleCount: 120,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0, y: 0.6 },
+    });
+    confetti({
+      particleCount: 120,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1, y: 0.6 },
+    });
+  };
+
+  const fireFireworks = (duration = 3000) => {
+    const confetti = getConfetti();
+    if (!confetti) return;
+    const end = Date.now() + duration;
+    const colors = ["#bb0000", "#ffffff", "#00bb00", "#FFD700", "#00BFFF"];
+
+    (function frame() {
+      confetti({
+        particleCount: 2,
+        angle: 60,
+        spread: 55,
+        origin: { x: Math.random() * 0.2, y: Math.random() * 0.5 },
+        colors,
+      });
+      confetti({
+        particleCount: 2,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 - Math.random() * 0.2, y: Math.random() * 0.5 },
+        colors,
+      });
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    })();
+  };
 
   const fetchCompetition = async () => {
     try {
@@ -822,13 +936,19 @@ export default function ManageCompetitionPage() {
         playTimerAudio(); // Play timer sound
       }
     } else if (roundType === "buzzer") {
-      console.log("Buzzer: Showing options for team selection");
+      // Start a short timer for buzzer just like MCQ
+      startTimer(15);
+      playTimerAudio();
+      console.log("Buzzer: Showing options for team selection with 15s timer");
     } else if (roundType === "rapid_fire") {
       startTimer(60); // 1 minute timer for rapid fire
       playTimerAudio(); // Play timer sound
       console.log("Rapid Fire: Starting 1 minute timer");
     } else if (roundType === "sequence") {
-      console.log("Sequence: Showing options for sequence input");
+      // Start 1 minute timer for sequence round for consistency
+      startTimer(60);
+      playTimerAudio();
+      console.log("Sequence: Showing options for sequence input with 60s timer");
     } else if (roundType === "visual_rapid_fire") {
       // For visual rapid fire, only reset image index - images already preloaded
       console.log("Visual Rapid Fire: Resetting image index");
@@ -874,7 +994,16 @@ export default function ManageCompetitionPage() {
       stopTimer();
       stopAllAudio(); // Stop audio when timer is stopped
     } else {
-      startTimer();
+      const defaultDuration = getDefaultRoundDuration();
+      if (timeLeft <= 0) {
+        // Start fresh with default duration for the current round
+        startTimer(defaultDuration);
+      } else {
+        // Resume from remaining time
+        startTimer();
+      }
+      // Resume timer audio when restarting timer via keyboard toggle
+      playTimerAudio();
     }
   };
 
@@ -888,6 +1017,22 @@ export default function ManageCompetitionPage() {
     if (group) {
       setCurrentGroup(group);
       await loadTeamsForGroup(group.teams);
+    }
+  };
+
+  const computeFinalWinnerTeam = () => {
+    const teams = (currentGroup?.teams || []).map((team) => ({
+      ...team,
+      score: teamScores[team._id] ?? team.totalScore ?? 0,
+    }));
+    if (teams.length === 0) return null;
+    return teams.sort((a, b) => b.score - a.score)[0];
+  };
+
+  const revealFinalWinner = () => {
+    if (!winnerRevealed) {
+      setWinnerRevealed(true);
+      fireFireworks(5000);
     }
   };
 
@@ -1044,6 +1189,13 @@ export default function ManageCompetitionPage() {
           if (currentPhase === "league" && roundType === "buzzer") {
             setShowGroupSummaryModal(true);
           }
+          // If this is the Final phase, show the Final Winner overlay
+          if (currentPhase === "final") {
+            const winner = computeFinalWinnerTeam();
+            setFinalWinnerTeamId(winner?._id || null);
+            setWinnerRevealed(false);
+            setShowFinalWinnerModal(true);
+          }
         }
       }
       return;
@@ -1052,6 +1204,23 @@ export default function ManageCompetitionPage() {
     nextQuestion();
     setSelectedTeam(null); // Clear selected team for buzzer rounds
     setState("idle"); // Reset to hidden state
+  };
+
+  const handlePrevQuestion = () => {
+    // Stop all audio when moving to previous question
+    stopAllAudio();
+
+    // Reset image index for visual rapid fire
+    if (roundType === "visual_rapid_fire") {
+      setCurrentImageIndex(0);
+    }
+
+    const prevIndex = currentQuestionIndex - 1;
+    if (prevIndex >= 0) {
+      prevQuestion();
+      setSelectedTeam(null);
+      setState("idle");
+    }
   };
 
   const handleOptionSelect = (option: string, index: number) => {
@@ -1073,7 +1242,9 @@ export default function ManageCompetitionPage() {
     // Play appropriate audio based on answer correctness
     if (isCorrect) {
       playRightAnswerAudio();
-      // Show confetti for correct answer
+      // Confetti from both sides for correct answer
+      fireSideConfetti();
+      // Keep existing CSS confetti for additional effect
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3000);
     } else {
@@ -1272,6 +1443,10 @@ export default function ManageCompetitionPage() {
 
     if (isCorrect) {
       toggleCorrectAnswer(); // Show correct answer feedback
+      // Confetti for correct buzzer answer
+      fireSideConfetti();
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
     }
 
     const buzzerPoints = getCurrentRoundPoints();
@@ -1584,7 +1759,7 @@ export default function ManageCompetitionPage() {
                                 <img
                                   src={currentQuestion.mediaUrl}
                                   alt="Question media"
-                                  className="max-w-full max-h-96 mx-auto rounded-lg shadow-lg"
+                                  className="max-w-5xl max-h-[36rem] md:max-h-[42rem] object-contain mx-auto rounded-lg shadow-lg"
                                 />
                               </div>
                             )}
@@ -1911,11 +2086,11 @@ export default function ManageCompetitionPage() {
                                   <img 
                                     src={currentQuestion.imageUrls[currentImageIndex]} 
                                     alt={`Visual Rapid Fire Image ${currentImageIndex + 1}`}
-                                    className="max-w-full max-h-96 mx-auto rounded-lg shadow-lg"
-                                    style={{ objectFit: 'contain' }}
+                                    className="max-w-5xl max-h-[36rem] md:max-h-[42rem] object-contain mx-auto rounded-lg shadow-lg"
                                     onLoad={() => console.log(`Image ${currentImageIndex + 1} loaded`)}
                                     onError={() => console.error(`Failed to load image ${currentImageIndex + 1}`)}
                                   />
+
                                   {!imagesPreloaded[currentImageIndex] && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
                                       <div className="text-gray-500">Loading...</div>
@@ -2457,6 +2632,13 @@ export default function ManageCompetitionPage() {
                 handleNextQuestion();
               }
               break;
+            case "p":
+              if (currentQuestionIndex > 0) {
+                stopAllAudio();
+                setState("idle");
+                handlePrevQuestion();
+              }
+              break;
             case "escape":
               exitPresentationMode();
               break;
@@ -2538,6 +2720,38 @@ export default function ManageCompetitionPage() {
             </div>
           </div>
         )}
+        {/* Final Winner Modal - Presentation overlay */}
+        {isPresenting && showFinalWinnerModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[90] p-6">
+            <div className="bg-gradient-to-br from-purple-700 to-pink-700 rounded-2xl p-10 w-full max-w-4xl text-white shadow-2xl text-center">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-12 h-12 mr-3 text-yellow-300" />
+                <h2 className="text-4xl font-extrabold">Final Complete</h2>
+              </div>
+              {!winnerRevealed ? (
+                <>
+                  <p className="text-2xl text-indigo-100 mb-4">Press 'A' to reveal the Winner</p>
+                  <p className="text-indigo-200">Keep the suspense! 🎉</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xl text-indigo-100 mb-2">Champion</p>
+                  <h3 className="text-6xl font-extrabold text-yellow-300 mb-2">
+                    {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.name || "Winner"}
+                  </h3>
+                  <p className="text-lg text-indigo-100">
+                    {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.school?.name || ""}
+                  </p>
+                </>
+              )}
+              <div className="mt-10 flex justify-center gap-3">
+                <Button variant="outline" onClick={() => setShowFinalWinnerModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Confetti Animation */}
         {showConfetti && (
           <div className="fixed inset-0 pointer-events-none z-[100]">
@@ -2561,7 +2775,7 @@ export default function ManageCompetitionPage() {
           {/* Presentation Header */}
           <div className="bg-gradient-to-r from-purple-800 to-blue-800 p-4 flex justify-between items-center shadow-lg">
             <div className="flex items-center space-x-6">
-              <h1 className="text-2xl font-bold">{competition.name}</h1>
+              <h1 className="text-4xl md:text-5xl font-extrabold">{competition.name}</h1>
               <div className="flex items-center space-x-4 text-lg">
                 <Badge variant="secondary" className="px-3 py-1">
                   {currentPhase === "league"
@@ -2602,10 +2816,6 @@ export default function ManageCompetitionPage() {
               >
                 Show Scores
               </Button>
-              <div className="text-4xl font-mono">
-                {Math.floor(timeLeft / 60)}:
-                {(timeLeft % 60).toString().padStart(2, "0")}
-              </div>
               <Button onClick={exitPresentationMode} variant="ghost" size="sm">
                 <X className="w-4 h-4" />
               </Button>
@@ -2628,11 +2838,6 @@ export default function ManageCompetitionPage() {
                   <p className="text-3xl text-gray-300">
                     Questions asked orally by anchor
                   </p>
-                  {/* Centered Timer for Rapid Fire */}
-                  <div className="text-9xl font-mono font-bold text-cyan-400">
-                    {Math.floor(timeLeft / 60)}:
-                    {(timeLeft % 60).toString().padStart(2, "0")}
-                  </div>
                 </div>
               ) : currentQuestion &&
                 (currentState === "question_shown" ||
@@ -2664,7 +2869,7 @@ export default function ManageCompetitionPage() {
                               <img
                                 src={currentQuestion.mediaUrl}
                                 alt="Question media"
-                                className="max-w-md max-h-64 object-contain rounded-lg shadow-lg"
+                                className="max-w-5xl max-h-[36rem] md:max-h-[42rem] object-contain rounded-lg shadow-lg"
                                 onLoad={() => {
                                   console.log(
                                     "Image loaded, starting timer for",
@@ -2702,7 +2907,7 @@ export default function ManageCompetitionPage() {
                             {currentQuestion.mediaType === "video" && (
                               <video
                                 controls
-                                className="max-w-md max-h-64 rounded-lg shadow-lg"
+                                className="max-w-5xl max-h-[36rem] md:max-h-[42rem] rounded-lg shadow-lg"
                                 onCanPlayThrough={() => {
                                   console.log(
                                     "Video loaded, starting timer for",
@@ -2758,17 +2963,6 @@ export default function ManageCompetitionPage() {
                         ))}
                       </div>
                     )}
-
-                  {/* Timer Display for Non-Rapid Fire Rounds */}
-                  {roundType !== "rapid_fire" && (currentState === "options_shown" || currentState === "timer_running") && (
-                    <div className="text-center">
-                      <div className="text-8xl font-mono font-bold text-cyan-400 mb-2">
-                        {Math.floor(timeLeft / 60)}:
-                        {(timeLeft % 60).toString().padStart(2, "0")}
-                      </div>
-                      <div className="text-2xl text-gray-300">Timer</div>
-                    </div>
-                  )}
 
                   {/* Buzzer Round Team Selection in Presentation */}
                   {roundType === "buzzer" &&
@@ -2846,10 +3040,10 @@ export default function ManageCompetitionPage() {
                             <img
                               src={currentQuestion.imageUrls[currentImageIndex]}
                               alt={`Visual rapid fire ${currentImageIndex + 1}`}
-                              className="max-w-2xl max-h-96 object-contain rounded-lg shadow-lg mx-auto"
+                              className="max-w-6xl max-h-[42rem] md:max-h-[48rem] object-contain rounded-lg shadow-lg mx-auto"
                             />
                           ) : (
-                            <div className="flex items-center justify-center h-96 w-full max-w-2xl mx-auto bg-gray-200 rounded-lg">
+                            <div className="flex items-center justify-center h-[42rem] w-full max-w-6xl mx-auto bg-gray-200 rounded-lg">
                               <div className="text-center">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
                                 <p className="text-gray-600">Loading image...</p>

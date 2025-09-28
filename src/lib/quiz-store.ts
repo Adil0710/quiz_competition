@@ -76,6 +76,7 @@ export interface QuizStore {
   setCurrentQuestion: (question: Question | null) => void;
   setQuestions: (questions: Question[]) => void;
   nextQuestion: () => void;
+  prevQuestion: () => void;
   
   // Timer actions
   startTimer: (duration?: number) => void;
@@ -175,18 +176,43 @@ export const useQuizStore = create<QuizStore>((set, get) => ({
     }
   },
   
+  prevQuestion: () => {
+    const { questions, currentQuestionIndex } = get();
+    if (currentQuestionIndex > 0) {
+      set({
+        currentQuestionIndex: currentQuestionIndex - 1,
+        currentQuestion: questions[currentQuestionIndex - 1]
+      });
+      get().resetQuestion();
+    }
+  },
+  
   // Timer actions
   startTimer: (duration) => {
-    const timerDuration = duration || get().timerDuration;
-    set({ 
-      timeLeft: timerDuration, 
-      timerDuration,
-      isTimerActive: true
+    const store = get();
+    // If a duration is provided, start from that duration and set as new timerDuration
+    if (typeof duration === "number") {
+      set({
+        timeLeft: duration,
+        timerDuration: duration,
+        isTimerActive: true,
+        // Don't change currentState - keep it as options_shown
+      });
+      return;
+    }
+
+    // If no duration is provided, resume from remaining time if available,
+    // otherwise use the last timerDuration (or 15s fallback)
+    const nextTimeLeft = store.timeLeft > 0 ? store.timeLeft : (store.timerDuration || 15);
+    set({
+      timeLeft: nextTimeLeft,
+      isTimerActive: true,
       // Don't change currentState - keep it as options_shown
     });
   },
   
-  stopTimer: () => set({ isTimerActive: false, timeLeft: 0 }),
+  // Pause timer without resetting remaining time
+  stopTimer: () => set({ isTimerActive: false }),
   
   updateTimer: () => {
     const { timeLeft, isTimerActive } = get();
