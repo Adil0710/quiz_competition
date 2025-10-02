@@ -58,6 +58,7 @@ export default function Navbar() {
     { href: "/competitions", label: "Competitions" },
     { href: "/teams", label: "Teams" },
     { href: "/schools", label: "Schools" },
+     { href: "/questions", label: "Questions" },
   ];
 
   const fonts = [

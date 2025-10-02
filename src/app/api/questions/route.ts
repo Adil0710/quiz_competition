@@ -40,7 +40,8 @@ export async function POST(request: NextRequest) {
     const difficulty = formData.get('difficulty') as string;
     const points = parseInt(formData.get('points') as string) || 1;
     const options = JSON.parse(formData.get('options') as string || '[]');
-    const correctAnswer = formData.get('correctAnswer') as string;
+    const correctAnswerRaw = formData.get('correctAnswer') as string;
+    const phaseRaw = (formData.get('phase') as string) || 'league';
     const mediaFile = formData.get('mediaFile') as File;
     const mediaType = formData.get('mediaType') as string;
 
@@ -64,17 +65,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Normalize phase
+    const phase = ['league', 'semi_final', 'final'].includes(phaseRaw) ? phaseRaw : 'league';
+
     const questionData: any = {
       question,
       type,
       category,
       difficulty: difficulty || 'medium',
       points,
-      options: type === 'mcq' || type === 'media' ? options : undefined,
-      correctAnswer: type !== 'rapid_fire' ? correctAnswer : undefined,
+      phase,
       mediaUrl: mediaUrl || undefined,
       mediaType: mediaUrl ? mediaType : undefined
     };
+
+    if (type === 'mcq' || type === 'media') {
+      questionData.options = options;
+      // keep whatever was sent as the correct option text or index encoded as string
+      questionData.correctAnswer = correctAnswerRaw ?? undefined;
+    } else if (type === 'buzzer') {
+      // free-text answer
+      questionData.correctAnswer = correctAnswerRaw ?? undefined;
+    } else if (type === 'sequence') {
+      // expect options array and correct sequence as either JSON array or comma string
+      questionData.options = options;
+      let parsed: number[] | null = null;
+      if (correctAnswerRaw) {
+        try {
+          const maybe = JSON.parse(correctAnswerRaw);
+          if (Array.isArray(maybe) && maybe.every((n) => Number.isInteger(n))) {
+            parsed = maybe;
+          }
+        } catch {}
+        if (!parsed) {
+          const parts = String(correctAnswerRaw)
+            .split(',')
+            .map((s) => Number(String(s).trim()));
+          if (
+            parts.length > 0 &&
+            parts.every((n) => Number.isInteger(n) && n >= 1 && n <= options.length)
+          ) {
+            parsed = parts.map((n) => n - 1);
+          }
+        }
+      }
+      questionData.correctAnswer = parsed ?? undefined;
+    } else if (type === 'rapid_fire' || type === 'visual_rapid_fire') {
+      // These types typically don't require correctAnswer here
+    }
 
     const newQuestion = await Question.create(questionData);
     // Return lean version for consistency

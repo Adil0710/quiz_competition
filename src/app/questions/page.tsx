@@ -10,13 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Question {
   _id: string;
   question: string;
-  type: 'mcq' | 'media' | 'rapid_fire';
+  type: 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence';
   options?: string[];
   correctAnswer?: string | number;
   mediaUrl?: string;
@@ -26,6 +27,7 @@ interface Question {
   points: number;
   isUsed: boolean;
   createdAt: string;
+  phase: 'league' | 'semi_final' | 'final';
 }
 
 export default function QuestionsPage() {
@@ -37,17 +39,23 @@ export default function QuestionsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [importTab, setImportTab] = useState<'mcq'|'buzzer'|'sequence'>('mcq');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{created:number;errors:{row:number;message:string}[]}|null>(null);
   const [formData, setFormData] = useState({
     question: '',
-    type: 'mcq' as 'mcq' | 'media' | 'rapid_fire',
+    type: 'mcq' as 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence',
     options: ['', '', '', ''],
     correctAnswer: '',
     mediaType: 'image' as 'image' | 'audio' | 'video',
     difficulty: 'medium' as 'easy' | 'medium' | 'hard',
     category: '',
-    points: 1
+    points: 1,
+    phase: 'league' as 'league'|'semi_final'|'final'
   });
   const { toast } = useToast();
 
@@ -97,9 +105,16 @@ export default function QuestionsPage() {
       formDataToSend.append('category', formData.category);
       formDataToSend.append('difficulty', formData.difficulty);
       formDataToSend.append('points', formData.points.toString());
+      formDataToSend.append('phase', formData.phase);
 
       if (formData.type === 'mcq' || formData.type === 'media') {
         formDataToSend.append('options', JSON.stringify(formData.options.filter(opt => opt.trim())));
+        formDataToSend.append('correctAnswer', formData.correctAnswer);
+      } else if (formData.type === 'buzzer') {
+        formDataToSend.append('correctAnswer', formData.correctAnswer);
+      } else if (formData.type === 'sequence') {
+        formDataToSend.append('options', JSON.stringify(formData.options.filter(opt => opt.trim())));
+        // Accept comma string like 1,2,3,4
         formDataToSend.append('correctAnswer', formData.correctAnswer);
       }
 
@@ -156,7 +171,8 @@ export default function QuestionsPage() {
       mediaType: question.mediaType || 'image',
       difficulty: question.difficulty,
       category: question.category,
-      points: question.points
+      points: question.points,
+      phase: question.phase || 'league'
     });
     setIsDialogOpen(true);
   };
@@ -202,7 +218,8 @@ export default function QuestionsPage() {
       mediaType: 'image',
       difficulty: 'medium',
       category: '',
-      points: 1
+      points: 1,
+      phase: 'league'
     });
     setEditingQuestion(null);
     setMediaFile(null);
@@ -218,6 +235,8 @@ export default function QuestionsPage() {
       case 'mcq': return '📝';
       case 'media': return '🎬';
       case 'rapid_fire': return '⚡';
+      case 'buzzer': return '🔔';
+      case 'sequence': return '🔢';
       default: return '❓';
     }
   };
@@ -239,22 +258,24 @@ export default function QuestionsPage() {
           <h1 className="text-3xl font-bold">Question Management</h1>
           <p className="text-muted-foreground">Add and manage quiz questions with media support</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => setIsDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Question
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingQuestion ? 'Edit Question' : 'Add New Question'}</DialogTitle>
-              <DialogDescription>
-                {editingQuestion ? 'Update question information' : 'Add a new question to the question bank'}
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
+        <div className="flex gap-2">
+          {/* Single Add */}
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => setIsDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Question
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingQuestion ? 'Edit Question' : 'Add New Question'}</DialogTitle>
+                <DialogDescription>
+                  {editingQuestion ? 'Update question information' : 'Add a new question to the question bank'}
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit}>
+                <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="question">Question</Label>
                   <Textarea
@@ -277,6 +298,8 @@ export default function QuestionsPage() {
                         <SelectItem value="mcq">Multiple Choice (MCQ)</SelectItem>
                         <SelectItem value="media">Media Question</SelectItem>
                         <SelectItem value="rapid_fire">Rapid Fire</SelectItem>
+                        <SelectItem value="buzzer">Buzzer</SelectItem>
+                        <SelectItem value="sequence">Sequence</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -290,6 +313,22 @@ export default function QuestionsPage() {
                       placeholder="e.g., Science, History"
                       required
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="phase">Phase</Label>
+                    <Select value={formData.phase} onValueChange={(value: any) => setFormData({ ...formData, phase: value })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="league">League</SelectItem>
+                        <SelectItem value="semi_final">Semi-Final</SelectItem>
+                        <SelectItem value="final">Final</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -360,6 +399,39 @@ export default function QuestionsPage() {
                   </>
                 )}
 
+                {/* Buzzer - free text answer */}
+                {formData.type === 'buzzer' && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="answer">Answer</Label>
+                    <Input id="answer" value={formData.correctAnswer} onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} placeholder="Type the correct answer" />
+                  </div>
+                )}
+
+                {/* Sequence - options and order */}
+                {formData.type === 'sequence' && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Options</Label>
+                      {formData.options.map((option, index) => (
+                        <Input
+                          key={index}
+                          value={option}
+                          onChange={(e) => {
+                            const newOptions = [...formData.options];
+                            newOptions[index] = e.target.value;
+                            setFormData({ ...formData, options: newOptions });
+                          }}
+                          placeholder={`Option ${index + 1}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="sequence">Correct Sequence (comma separated, e.g., 2,1,3,4)</Label>
+                      <Input id="sequence" value={formData.correctAnswer} onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} />
+                    </div>
+                  </>
+                )}
+
                 {/* Media upload for media questions */}
                 {formData.type === 'media' && (
                   <>
@@ -391,25 +463,123 @@ export default function QuestionsPage() {
                     </div>
                   </>
                 )}
-              </div>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={handleDialogClose}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      editingQuestion ? 'Update' : 'Create'
+                    )}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Bulk Import */}
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" onClick={()=>setIsImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" /> Bulk Import
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Bulk Import Questions</DialogTitle>
+                <DialogDescription>Upload Excel (.xlsx) files per round type.</DialogDescription>
+              </DialogHeader>
+              <Tabs value={importTab} onValueChange={(v)=>setImportTab(v as any)}>
+                <TabsList>
+                  <TabsTrigger value="mcq">MCQ</TabsTrigger>
+                  <TabsTrigger value="buzzer">Buzzer</TabsTrigger>
+                  <TabsTrigger value="sequence">Sequence</TabsTrigger>
+                </TabsList>
+                {(['mcq','buzzer','sequence'] as const).map(t => (
+                  <TabsContent key={t} value={t} className="space-y-4 pt-4">
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" onClick={async()=>{
+                        const res = await fetch(`/api/questions/templates?type=${t}`);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${t}_template.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                      }}>Download {t.toUpperCase()} Template</Button>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Upload {t.toUpperCase()} Excel</Label>
+                      <Input type="file" accept=".xlsx,.xls" onChange={(e)=>setImportFile(e.target.files?.[0]||null)} />
+                    </div>
+                    <div>
+                      <Button disabled={!importFile || importing} onClick={async()=>{
+                        if (!importFile) return;
+                        setImporting(true);
+                        setImportResult(null);
+                        try {
+                          const fd = new FormData();
+                          fd.append('file', importFile);
+                          fd.append('type', t);
+                          const res = await fetch('/api/questions/import', { method: 'POST', body: fd });
+                          const data = await res.json();
+                          if (data.success) {
+                            setImportResult({ created: data.created, errors: data.errors || [] });
+                            if (data.created > 0) fetchQuestions();
+                          } else {
+                            setImportResult({ created: 0, errors: [{ row: 0, message: data.error || 'Import failed' }] });
+                          }
+                        } catch (e:any) {
+                          setImportResult({ created: 0, errors: [{ row: 0, message: e?.message || 'Import failed' }] });
+                        } finally {
+                          setImporting(false);
+                        }
+                      }}>{importing ? 'Importing...' : 'Import'}</Button>
+                    </div>
+                    {importResult && (
+                      <div className="space-y-2">
+                        <p className="text-sm">Created: <strong>{importResult.created}</strong></p>
+                        {importResult.errors.length > 0 && (
+                          <div>
+                            <p className="text-sm font-semibold mb-2">Errors</p>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Row</TableHead>
+                                  <TableHead>Message</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {importResult.errors.map((er,i)=>(
+                                  <TableRow key={i}>
+                                    <TableCell>{er.row}</TableCell>
+                                    <TableCell className="text-red-600">{er.message}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </TabsContent>
+                ))}
+              </Tabs>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={handleDialogClose}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    editingQuestion ? 'Update' : 'Create'
-                  )}
-                </Button>
+                <Button type="button" variant="outline" onClick={()=>{ setIsImportOpen(false); setImportFile(null); setImportResult(null); }}>Close</Button>
               </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
@@ -437,6 +607,8 @@ export default function QuestionsPage() {
                 <SelectItem value="mcq">MCQ Only</SelectItem>
                 <SelectItem value="media">Media Only</SelectItem>
                 <SelectItem value="rapid_fire">Rapid Fire Only</SelectItem>
+                <SelectItem value="buzzer">Buzzer Only</SelectItem>
+                <SelectItem value="sequence">Sequence Only</SelectItem>
               </SelectContent>
             </Select>
           </div>
