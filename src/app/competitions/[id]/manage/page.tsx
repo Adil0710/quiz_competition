@@ -163,13 +163,14 @@ export default function ManageCompetitionPage() {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imagesPreloaded, setImagesPreloaded] = useState<boolean[]>([]);
-  const [showConfetti, setShowConfetti] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
   const [showRoundSummaryModal, setShowRoundSummaryModal] = useState(false);
   const [showFinalWinnerModal, setShowFinalWinnerModal] = useState(false);
   const [winnerRevealed, setWinnerRevealed] = useState(false);
   const [finalWinnerTeamId, setFinalWinnerTeamId] = useState<string | null>(null);
+  const [floatingPoints, setFloatingPoints] = useState<{id: number; points: number; x: number; y: number}[]>([]);
+  const floatingIdRef = useRef(0);
   const [completedRoundInfo, setCompletedRoundInfo] = useState<{ name: string; type: string } | null>(null);
   const [pendingNextRoundInfo, setPendingNextRoundInfo] = useState<{ name: string; type: string } | null>(null);
   const [pendingNextRoundIndex, setPendingNextRoundIndex] = useState<number | null>(null);
@@ -373,6 +374,23 @@ export default function ManageCompetitionPage() {
     };
   }, [isTimerActive, updateTimer]);
 
+  // Start timer automatically when a team is selected in Buzzer round
+  useEffect(() => {
+    if (roundType === "buzzer" && selectedTeam) {
+      const store = (useQuizStore as any).getState();
+      const active = store.isTimerActive as boolean;
+      const currentLeft = store.timeLeft as number;
+      if (!active) {
+        if (currentLeft > 0) {
+          startTimer();
+        } else {
+          startTimer(15);
+        }
+        playTimerAudio();
+      }
+    }
+  }, [roundType, selectedTeam, startTimer]);
+
   // Audio helper functions
   const playTimerAudio = () => {
     if (timerAudioRef.current) {
@@ -413,6 +431,8 @@ export default function ManageCompetitionPage() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
+      // When presenting, rely on the presentation container's key handler to avoid double handling
+      if (isPresenting) return;
       console.log(
         "Key pressed:",
         event.key,
@@ -517,7 +537,7 @@ export default function ManageCompetitionPage() {
       console.log("Removing keyboard listener");
       document.removeEventListener("keydown", handleKeyPress);
     };
-  }, [currentQuestion, currentState, competition, currentGroup, currentPhase]);
+  }, [currentQuestion, currentState, competition, currentGroup, currentPhase, isPresenting]);
 
   // Fullscreen change handler
   useEffect(() => {
@@ -572,17 +592,51 @@ export default function ManageCompetitionPage() {
 
   const fireSideConfetti = () => {
     const confetti = getConfetti();
-    if (!confetti) return;
-    confetti({
+    if (!confetti) {
+      console.warn('Canvas-confetti not loaded yet');
+      return;
+    }
+
+    // Prefer fullscreen element as container; fallback to presentation ref; else body
+    const container = (document.fullscreenElement as HTMLElement) || presentRef.current || document.body;
+
+    // Look for an existing canvas inside the container
+    let canvas = container.querySelector('[data-confetti-canvas="true"]') as HTMLCanvasElement | null;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.setAttribute('data-confetti-canvas', 'true');
+      canvas.style.position = 'absolute';
+      canvas.style.top = '0';
+      canvas.style.left = '0';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.pointerEvents = 'none';
+      canvas.style.zIndex = String(2147483647); // max z-index
+      container.appendChild(canvas);
+    }
+
+    // Create confetti instance bound to our canvas
+    const myConfetti = confetti.create(canvas, {
+      resize: true,
+      useWorker: true,
+    });
+
+    const confettiConfig = {
       particleCount: 120,
-      angle: 60,
       spread: 55,
+      startVelocity: 45,
+      decay: 0.9,
+      scalar: 1.2,
+    } as const;
+
+    myConfetti({
+      ...confettiConfig,
+      angle: 60,
       origin: { x: 0, y: 0.6 },
     });
-    confetti({
-      particleCount: 120,
+    myConfetti({
+      ...confettiConfig,
       angle: 120,
-      spread: 55,
       origin: { x: 1, y: 0.6 },
     });
   };
@@ -590,18 +644,40 @@ export default function ManageCompetitionPage() {
   const fireFireworks = (duration = 3000) => {
     const confetti = getConfetti();
     if (!confetti) return;
+
+    const container = (document.fullscreenElement as HTMLElement) || presentRef.current || document.body;
+
+    let canvas = container.querySelector('[data-confetti-canvas="true"]') as HTMLCanvasElement | null;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.setAttribute('data-confetti-canvas', 'true');
+      canvas.style.position = 'absolute';
+      canvas.style.top = '0';
+      canvas.style.left = '0';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.pointerEvents = 'none';
+      canvas.style.zIndex = String(2147483647);
+      container.appendChild(canvas);
+    }
+
+    const myConfetti = confetti.create(canvas, {
+      resize: true,
+      useWorker: true,
+    });
+
     const end = Date.now() + duration;
-    const colors = ["#bb0000", "#ffffff", "#00bb00", "#FFD700", "#00BFFF"];
+    const colors = ["#bb0000", "#ffffff", "#00bb00", "#FFD700", "#00BFFF"] as const;
 
     (function frame() {
-      confetti({
+      myConfetti({
         particleCount: 2,
         angle: 60,
         spread: 55,
         origin: { x: Math.random() * 0.2, y: Math.random() * 0.5 },
         colors,
       });
-      confetti({
+      myConfetti({
         particleCount: 2,
         angle: 120,
         spread: 55,
@@ -612,6 +688,39 @@ export default function ManageCompetitionPage() {
         requestAnimationFrame(frame);
       }
     })();
+  };
+
+  const triggerFloatingPoints = (points: number, teamId?: string) => {
+    const count = 5 + Math.floor(Math.random() * 2); // Create 5-6 floating elements
+    const newFloaters: typeof floatingPoints = [];
+    
+    // Try to get team card position
+    let baseX = 50; // Default center
+    let baseY = 70; // Default bottom area
+    
+    if (teamId) {
+      const teamCard = document.querySelector(`[data-team-id="${teamId}"]`);
+      if (teamCard) {
+        const rect = teamCard.getBoundingClientRect();
+        baseX = ((rect.left + rect.width / 2) / window.innerWidth) * 100;
+        baseY = (rect.top / window.innerHeight) * 100;
+      }
+    }
+    
+    for (let i = 0; i < count; i++) {
+      floatingIdRef.current++;
+      newFloaters.push({
+        id: floatingIdRef.current,
+        points: points,
+        x: baseX + (Math.random() - 0.5) * 10, // Spread around team card
+        y: baseY + (Math.random() - 0.5) * 10,
+      });
+    }
+    setFloatingPoints(prev => [...prev, ...newFloaters]);
+    // Remove after animation completes
+    setTimeout(() => {
+      setFloatingPoints(prev => prev.filter(f => !newFloaters.find(n => n.id === f.id)));
+    }, 2000);
   };
 
   const fetchCompetition = async () => {
@@ -927,19 +1036,13 @@ export default function ManageCompetitionPage() {
         "MCQ: Showing options with 15s timer, state set to options_shown"
       );
     } else if (roundType === "media") {
-      // For media, NEVER start timer immediately - always wait for media to load
-      if (currentQuestion?.mediaUrl) {
-        console.log("Media: Waiting for media to load before starting timer");
-        // Timer will start when media loads via onLoad/onCanPlayThrough events
-      } else {
-        startTimer(15); // No media, start timer normally
-        playTimerAudio(); // Play timer sound
-      }
-    } else if (roundType === "buzzer") {
-      // Start a short timer for buzzer just like MCQ
+      // Start timer immediately for media on options show
       startTimer(15);
       playTimerAudio();
-      console.log("Buzzer: Showing options for team selection with 15s timer");
+      console.log("Media: Starting 15s timer on options show");
+    } else if (roundType === "buzzer") {
+      // For buzzer, only show options; timer will start when a team is selected
+      console.log("Buzzer: Showing options for team selection (timer starts on team selection)");
     } else if (roundType === "rapid_fire") {
       startTimer(60); // 1 minute timer for rapid fire
       playTimerAudio(); // Play timer sound
@@ -991,18 +1094,12 @@ export default function ManageCompetitionPage() {
 
   const handleTimerToggle = () => {
     if (isTimerActive) {
+      // Pause without resetting remaining time
       stopTimer();
-      stopAllAudio(); // Stop audio when timer is stopped
+      stopAllAudio();
     } else {
-      const defaultDuration = getDefaultRoundDuration();
-      if (timeLeft <= 0) {
-        // Start fresh with default duration for the current round
-        startTimer(defaultDuration);
-      } else {
-        // Resume from remaining time
-        startTimer();
-      }
-      // Resume timer audio when restarting timer via keyboard toggle
+      // Resume from remaining time; store will use last timerDuration if 0
+      startTimer();
       playTimerAudio();
     }
   };
@@ -1230,6 +1327,9 @@ export default function ManageCompetitionPage() {
     stopTimer();
     stopAllAudio();
     
+    // Always fire confetti on option click per requirement
+    fireSideConfetti();
+    
     const correctAnswer = currentQuestion?.correctAnswer;
     let isCorrect = false;
 
@@ -1242,11 +1342,6 @@ export default function ManageCompetitionPage() {
     // Play appropriate audio based on answer correctness
     if (isCorrect) {
       playRightAnswerAudio();
-      // Confetti from both sides for correct answer
-      fireSideConfetti();
-      // Keep existing CSS confetti for additional effect
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3000);
     } else {
       playWrongAnswerAudio();
       // Auto-show correct answer for wrong selection
@@ -1341,6 +1436,11 @@ export default function ManageCompetitionPage() {
           title: "Points Awarded",
           description: `${finalPoints > 0 ? "+" : ""}${finalPoints} points awarded. Total: ${newTotal}`,
         });
+
+        // On awarding points, only show floating points animation (no confetti)
+        if (finalPoints > 0) {
+          triggerFloatingPoints(finalPoints, teamId);
+        }
       } else {
         throw new Error("Failed to update score");
       }
@@ -1421,6 +1521,11 @@ export default function ManageCompetitionPage() {
       // All steps revealed, close modal and show answer
       toggleSequenceModal();
       setState("answer_shown");
+      // If entire sequence matches, celebrate
+      const allCorrect =
+        sequenceComparison.correct.length === sequenceComparison.selected.length &&
+        sequenceComparison.correct.every((v: number, idx: number) => v === sequenceComparison.selected[idx]);
+      // No confetti here; only dialogs and option clicks should trigger confetti
     }
   };
 
@@ -1445,8 +1550,6 @@ export default function ManageCompetitionPage() {
       toggleCorrectAnswer(); // Show correct answer feedback
       // Confetti for correct buzzer answer
       fireSideConfetti();
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 3000);
     }
 
     const buzzerPoints = getCurrentRoundPoints();
@@ -2752,24 +2855,25 @@ export default function ManageCompetitionPage() {
             </div>
           </div>
         )}
-        {/* Confetti Animation */}
-        {showConfetti && (
-          <div className="fixed inset-0 pointer-events-none z-[100]">
-            <div className="confetti-container">
-              {[...Array(50)].map((_, i) => (
-                <div
-                  key={i}
-                  className="confetti"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    animationDelay: `${Math.random() * 3}s`,
-                    backgroundColor: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'][Math.floor(Math.random() * 6)]
-                  }}
-                />
-              ))}
-            </div>
+
+        {/* Floating Points Animation */}
+        {floatingPoints.map((fp) => (
+          <div
+            key={fp.id}
+            className="fixed pointer-events-none animate-float-up"
+            style={{
+              left: `${fp.x}%`,
+              top: `${fp.y}%`,
+              fontSize: `${2 + Math.random() * 2}rem`,
+              fontWeight: 'bold',
+              color: fp.points > 0 ? '#22c55e' : '#ef4444',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+              zIndex: 9998,
+            }}
+          >
+            {fp.points > 0 ? '+' : ''}{fp.points}
           </div>
-        )}
+        ))}
 
         <div className="h-full flex flex-col">
           {/* Presentation Header */}
@@ -2845,6 +2949,18 @@ export default function ManageCompetitionPage() {
                   currentState === "timer_running" ||
                   currentState === "answer_shown") ? (
                 <div className="text-center w-full space-y-8">
+                  {/* Global Presentation Timer (not in header) */}
+                  <div className="flex justify-center">
+                    <div
+                      className="inline-flex items-center gap-4 px-5 py-3 rounded-2xl bg-black/40 border border-white/20 shadow-lg cursor-pointer select-none hover:bg-black/50"
+                      onClick={handleTimerToggle}
+                    >
+                      <Timer className={`w-6 h-6 ${isTimerActive ? 'text-green-400' : 'text-yellow-300'}`} />
+                      <div className="font-mono text-5xl font-extrabold tracking-wider">
+                        {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+                      </div>
+                    </div>
+                  </div>
                   {/* Question Text - Full Width */}
                   {!(roundType === "media" && currentState === "options_shown") && (
                     <h2 className="text-6xl font-bold quiz-font leading-tight">
@@ -2875,7 +2991,7 @@ export default function ManageCompetitionPage() {
                                     "Image loaded, starting timer for",
                                     roundType
                                   );
-                                  if (currentState === "options_shown") {
+                                  if (!isTimerActive && currentState === "options_shown") {
                                     startTimer(roundType === "media" ? 15 : 60);
                                     playTimerAudio(); // Play timer sound
                                   }
@@ -2891,7 +3007,7 @@ export default function ManageCompetitionPage() {
                                     "Audio loaded, starting timer for",
                                     roundType
                                   );
-                                  if (currentState === "options_shown") {
+                                  if (!isTimerActive && currentState === "options_shown") {
                                     startTimer(15);
                                     playTimerAudio(); // Play timer sound
                                   }
@@ -2913,7 +3029,7 @@ export default function ManageCompetitionPage() {
                                     "Video loaded, starting timer for",
                                     roundType
                                   );
-                                  if (currentState === "options_shown") {
+                                  if (!isTimerActive && currentState === "options_shown") {
                                     startTimer(15);
                                     playTimerAudio(); // Play timer sound
                                   }
@@ -3139,7 +3255,7 @@ export default function ManageCompetitionPage() {
                     ? currentGroup.teams?.filter((team) => activeTieTeamIds.includes(team._id))
                     : currentGroup.teams
                   )?.map((team) => (
-                    <div key={team._id} className="text-center bg-black bg-opacity-40 rounded-xl p-6 backdrop-blur-sm border-2 border-white border-opacity-30">
+                    <div key={team._id} data-team-id={team._id} className="text-center bg-black bg-opacity-40 rounded-xl p-6 backdrop-blur-sm border-2 border-white border-opacity-30">
                       <h3 className="text-4xl font-bold mb-4 text-white">{team.name}</h3>
                       <p className="text-6xl font-mono font-bold mb-4 text-yellow-300">
                         {teamScores[team._id] || 0}
@@ -3424,33 +3540,25 @@ export default function ManageCompetitionPage() {
         <source src="/wrong_answer.mp3" type="audio/mpeg" />
       </audio>
 
-      {/* Confetti CSS */}
+      {/* Floating Points Animation CSS */}
       <style jsx>{`
-        .confetti-container {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          overflow: hidden;
-        }
-        
-        .confetti {
-          position: absolute;
-          width: 10px;
-          height: 10px;
-          animation: confetti-fall 3s linear infinite;
-        }
-        
-        @keyframes confetti-fall {
+        @keyframes float-up {
           0% {
-            transform: translateY(-100vh) rotate(0deg);
+            transform: translateY(0) scale(1);
             opacity: 1;
           }
+          50% {
+            transform: translateY(-80px) scale(1.2);
+            opacity: 0.8;
+          }
           100% {
-            transform: translateY(100vh) rotate(720deg);
+            transform: translateY(-150px) scale(0.8);
             opacity: 0;
           }
+        }
+        
+        .animate-float-up {
+          animation: float-up 2s ease-out forwards;
         }
       `}</style>
     </div>
