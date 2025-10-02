@@ -17,11 +17,12 @@ import { useToast } from '@/components/ui/use-toast';
 interface Question {
   _id: string;
   question: string;
-  type: 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence';
+  type: 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence' | 'visual_rapid_fire';
   options?: string[];
   correctAnswer?: string | number;
   mediaUrl?: string;
   mediaType?: 'image' | 'audio' | 'video';
+  imageUrls?: string[];
   difficulty: 'easy' | 'medium' | 'hard';
   category: string;
   points: number;
@@ -48,7 +49,7 @@ export default function QuestionsPage() {
   const [importResult, setImportResult] = useState<{created:number;errors:{row:number;message:string}[]}|null>(null);
   const [formData, setFormData] = useState({
     question: '',
-    type: 'mcq' as 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence',
+    type: 'mcq' as 'mcq' | 'media' | 'rapid_fire' | 'buzzer' | 'sequence' | 'visual_rapid_fire',
     options: ['', '', '', ''],
     correctAnswer: '',
     mediaType: 'image' as 'image' | 'audio' | 'video',
@@ -57,6 +58,9 @@ export default function QuestionsPage() {
     points: 1,
     phase: 'league' as 'league'|'semi_final'|'final'
   });
+  const [vrfFiles, setVrfFiles] = useState<FileList | null>(null);
+  const [vrfUploading, setVrfUploading] = useState(false);
+  const [vrfImageUrls, setVrfImageUrls] = useState<string[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -123,6 +127,12 @@ export default function QuestionsPage() {
         if (mediaFile) {
           formDataToSend.append('mediaFile', mediaFile);
         }
+      } else if (formData.type === 'visual_rapid_fire') {
+        // Attach uploaded image URLs for visual rapid fire
+        if (vrfImageUrls.length === 0) {
+          throw new Error('Please upload at least one image for Visual Rapid Fire');
+        }
+        formDataToSend.append('imageUrls', JSON.stringify(vrfImageUrls));
       }
 
       const url = editingQuestion ? `/api/questions/${editingQuestion._id}` : '/api/questions';
@@ -174,6 +184,8 @@ export default function QuestionsPage() {
       points: question.points,
       phase: question.phase || 'league'
     });
+    setVrfImageUrls(question.imageUrls || []);
+    setVrfFiles(null);
     setIsDialogOpen(true);
   };
 
@@ -223,6 +235,8 @@ export default function QuestionsPage() {
     });
     setEditingQuestion(null);
     setMediaFile(null);
+    setVrfFiles(null);
+    setVrfImageUrls([]);
   };
 
   const handleDialogClose = () => {
@@ -237,6 +251,7 @@ export default function QuestionsPage() {
       case 'rapid_fire': return '⚡';
       case 'buzzer': return '🔔';
       case 'sequence': return '🔢';
+      case 'visual_rapid_fire': return '🖼️';
       default: return '❓';
     }
   };
@@ -300,6 +315,7 @@ export default function QuestionsPage() {
                         <SelectItem value="rapid_fire">Rapid Fire</SelectItem>
                         <SelectItem value="buzzer">Buzzer</SelectItem>
                         <SelectItem value="sequence">Sequence</SelectItem>
+                        <SelectItem value="visual_rapid_fire">Visual Rapid Fire</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -396,6 +412,44 @@ export default function QuestionsPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                  </>
+                )}
+
+                {/* Visual Rapid Fire - multiple images */}
+                {formData.type === 'visual_rapid_fire' && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Upload Images (multiple)</Label>
+                      <Input type="file" accept="image/*" multiple onChange={(e)=>setVrfFiles(e.target.files)} />
+                      <div>
+                        <Button type="button" disabled={!vrfFiles || vrfUploading} onClick={async()=>{
+                          if (!vrfFiles || vrfFiles.length === 0) return;
+                          setVrfUploading(true);
+                          try {
+                            const fd = new FormData();
+                            fd.append('folder', 'visual-rapid-fire');
+                            Array.from(vrfFiles).forEach((file, idx)=> fd.append(`file${idx}`, file));
+                            const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+                            const data = await res.json();
+                            if (data.success) {
+                              const urls: string[] = (data.files || []).map((f:any)=>f.url).filter(Boolean);
+                              setVrfImageUrls(urls);
+                            }
+                          } finally {
+                            setVrfUploading(false);
+                          }
+                        }}>{vrfUploading ? 'Uploading...' : 'Upload Images'}</Button>
+                      </div>
+                    </div>
+                    {vrfImageUrls.length > 0 && (
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                        {vrfImageUrls.map((u, i)=> (
+                          <div key={i} className="relative border rounded overflow-hidden">
+                            <img src={u} alt={`img-${i}`} className="w-full h-24 object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -609,6 +663,7 @@ export default function QuestionsPage() {
                 <SelectItem value="rapid_fire">Rapid Fire Only</SelectItem>
                 <SelectItem value="buzzer">Buzzer Only</SelectItem>
                 <SelectItem value="sequence">Sequence Only</SelectItem>
+                <SelectItem value="visual_rapid_fire">Visual Rapid Fire Only</SelectItem>
               </SelectContent>
             </Select>
           </div>

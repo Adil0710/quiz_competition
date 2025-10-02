@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const runtime = 'nodejs';
 import dbConnect from '@/lib/mongodb';
 import Question from '@/models/Question';
 import { uploadToCloudinary } from '@/lib/cloudinary';
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
     const phaseRaw = (formData.get('phase') as string) || 'league';
     const mediaFile = formData.get('mediaFile') as File;
     const mediaType = formData.get('mediaType') as string;
+    const imageUrlsRaw = formData.get('imageUrls') as string | null;
 
     if (!question || !type || !category) {
       return NextResponse.json(
@@ -110,8 +112,18 @@ export async function POST(request: NextRequest) {
         }
       }
       questionData.correctAnswer = parsed ?? undefined;
-    } else if (type === 'rapid_fire' || type === 'visual_rapid_fire') {
-      // These types typically don't require correctAnswer here
+    } else if (type === 'visual_rapid_fire') {
+      // Visual Rapid Fire: accept array of image URLs
+      if (imageUrlsRaw) {
+        try {
+          const parsed = JSON.parse(imageUrlsRaw);
+          if (Array.isArray(parsed) && parsed.every((u) => typeof u === 'string')) {
+            questionData.imageUrls = parsed;
+          }
+        } catch {}
+      }
+    } else if (type === 'rapid_fire') {
+      // Rapid fire no additional fields
     }
 
     const newQuestion = await Question.create(questionData);
