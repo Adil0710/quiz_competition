@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,9 +29,11 @@ import {
   Check,
   X,
   SkipForward,
+  Star,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuizStore } from "@/lib/quiz-store";
+import { motion } from "framer-motion";
 
 interface Team {
   _id: string;
@@ -195,6 +197,21 @@ export default function ManageCompetitionPage() {
   });
 
   const presentRef = useRef<HTMLDivElement | null>(null);
+  
+  // Generate star configurations once
+  const starConfigs = useMemo(() => {
+    return [...Array(25)].map((_, i) => {
+      const sizes = [24, 28, 32, 36, 40, 44, 48, 52];
+      return {
+        size: sizes[i % sizes.length],
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        duration: 3 + Math.random() * 2,
+        delay: Math.random() * 2,
+        yRange: 15 + Math.random() * 10,
+      };
+    });
+  }, []);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const timerAudioRef = useRef<HTMLAudioElement | null>(null);
   const rightAnswerAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -321,6 +338,12 @@ export default function ManageCompetitionPage() {
       default:
         return false;
     }
+  };
+
+  // Detect if text contains RTL scripts (Arabic, Urdu, Hebrew, etc.)
+  const isRTL = (s?: string) => {
+    if (!s) return false;
+    return /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(s);
   };
 
   // Initialize first round when competition loads
@@ -1327,8 +1350,7 @@ export default function ManageCompetitionPage() {
     stopTimer();
     stopAllAudio();
     
-    // Always fire confetti on option click per requirement
-    fireSideConfetti();
+    // Confetti will be fired only for correct answers
     
     const correctAnswer = currentQuestion?.correctAnswer;
     let isCorrect = false;
@@ -1339,9 +1361,11 @@ export default function ManageCompetitionPage() {
       isCorrect = option === correctAnswer;
     }
 
-    // Play appropriate audio based on answer correctness
+    // Play appropriate audio and visuals based on answer correctness
     if (isCorrect) {
       playRightAnswerAudio();
+      // Celebrate only on correct answer
+      fireSideConfetti();
     } else {
       playWrongAnswerAudio();
       // Auto-show correct answer for wrong selection
@@ -1848,8 +1872,13 @@ export default function ManageCompetitionPage() {
                   {currentState !== "idle" && (
                     <div className="mb-6">
                       {roundType !== "rapid_fire" && (
-                        <h3 className="text-xl font-semibold mb-4 quiz-font">
-                          {currentQuestion.question}
+                        <h3
+                          className={`text-xl font-semibold mb-4 quiz-font ${isRTL(currentQuestion.question) ? 'text-right' : ''}`}
+                          dir={isRTL(currentQuestion.question) ? 'rtl' : 'ltr'}
+                        >
+                          <span style={{ unicodeBidi: 'isolate' }}>
+                            {currentQuestion.question}
+                          </span>
                         </h3>
                       )}
 
@@ -1963,9 +1992,13 @@ export default function ManageCompetitionPage() {
                                     handleOptionSelect(option, index)
                                   }
                                 >
-                                  <span className="quiz-font">{String.fromCharCode(65 + index)}. {option}</span>
+                                  <span className={`quiz-font w-full flex items-center ${isRTL(option) ? 'flex-row-reverse text-right' : ''}`}>
+                                    <span dir="ltr" className="font-bold mx-2">{String.fromCharCode(65 + index)}.</span>
+                                    <span dir={isRTL(option) ? 'rtl' : 'ltr'} style={{ unicodeBidi: 'isolate' }} className="flex-1">{option}</span>
+                                  </span>
                                 </Button>
                               ))}
+
                             </div>
                           </div>
                         )}
@@ -1991,7 +2024,11 @@ export default function ManageCompetitionPage() {
                             <h4 className="font-semibold text-green-800 mb-2">
                               Answer:
                             </h4>
-                            <p className="text-green-700 text-lg">
+                            <p
+                              className="text-green-700 text-lg"
+                              dir={isRTL(String(currentQuestion?.correctAnswer ?? '')) ? 'rtl' : 'ltr'}
+                              style={{ unicodeBidi: 'isolate' }}
+                            >
                               {currentQuestion?.correctAnswer}
                             </p>
                           </div>
@@ -2211,7 +2248,19 @@ export default function ManageCompetitionPage() {
                           <h4 className="font-semibold text-green-800 mb-2">
                             Correct Answer:
                           </h4>
-                          <p className="text-green-700">
+                          <p
+                            className="text-green-700"
+                            dir={isRTL(
+                              typeof currentQuestion.correctAnswer === 'string'
+                                ? currentQuestion.correctAnswer
+                                : String(
+                                    currentQuestion.options?.[
+                                      currentQuestion.correctAnswer as number
+                                    ] || ''
+                                  )
+                            ) ? 'rtl' : 'ltr'}
+                            style={{ unicodeBidi: 'isolate' }}
+                          >
                             {typeof currentQuestion.correctAnswer === "string"
                               ? currentQuestion.correctAnswer
                               : currentQuestion.options?.[
@@ -2926,11 +2975,44 @@ export default function ManageCompetitionPage() {
             </div>
           </div>
 
+          {/* Animated Golden Stars Background */}
+          <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+            {starConfigs.map((config, i) => (
+              <motion.div
+                key={i}
+                className="absolute"
+                style={{
+                  left: `${config.left}%`,
+                  top: `${config.top}%`,
+                }}
+                animate={{
+                  y: [0, -config.yRange, 0],
+                  opacity: [0.3, 0.6, 0.3],
+                }}
+                transition={{
+                  duration: config.duration,
+                  delay: config.delay,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              >
+                <Star
+                  size={config.size}
+                  className="text-yellow-400"
+                  fill="none"
+                  strokeWidth={2}
+                  style={{
+                    filter: 'drop-shadow(0 0 8px rgba(250, 204, 21, 0.6)) drop-shadow(0 0 16px rgba(250, 204, 21, 0.4))',
+                  }}
+                />
+              </motion.div>
+            ))}
+          </div>
 
           {/* Presentation Content */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col" style={{ position: 'relative', zIndex: 1 }}>
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-8">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12">
 
               {/* Show content based on round type and state */}
               {roundType === "rapid_fire" &&
@@ -2948,23 +3030,43 @@ export default function ManageCompetitionPage() {
                   currentState === "options_shown" ||
                   currentState === "timer_running" ||
                   currentState === "answer_shown") ? (
-                <div className="text-center w-full space-y-8">
+                <div className="text-center w-full space-y-20">
                   {/* Global Presentation Timer (not in header) */}
                   <div className="flex justify-center">
                     <div
                       className="inline-flex items-center gap-4 px-5 py-3 rounded-2xl bg-black/40 border border-white/20 shadow-lg cursor-pointer select-none hover:bg-black/50"
                       onClick={handleTimerToggle}
                     >
-                      <Timer className={`w-6 h-6 ${isTimerActive ? 'text-green-400' : 'text-yellow-300'}`} />
-                      <div className="font-mono text-5xl font-extrabold tracking-wider">
+                      <motion.div
+                        animate={
+                          isTimerActive
+                            ? { x: [0, -3, 3, -3, 0], y: [0, -0.5, 0.5, -0.5, 0], rotate: [0, -4, 4, -4, 0], scale: [1, 1.08, 1, 1.08, 1] }
+                            : { x: 0, y: 0, rotate: 0, scale: 1 }
+                        }
+                        transition={{ duration: 0.6, repeat: isTimerActive ? Infinity : 0, repeatType: 'mirror', ease: "easeInOut" }}
+                      >
+                        <Timer className={`w-10 h-10 ${isTimerActive ? 'text-green-400' : 'text-yellow-300'}`} />
+                      </motion.div>
+                      <motion.div
+                        key={isTimerActive ? timeLeft : 'staticTime'}
+                        initial={{ scale: 0.92, opacity: 0.55 }}
+                        animate={{ scale: [0.92, 1.18, 1.0], opacity: [0.55, 1, 0.96] }}
+                        transition={{ duration: 1.0, ease: [0.22, 1, 0.36, 1], times: [0, 0.55, 1] }}
+                        className="font-mono text-5xl font-extrabold tracking-wider"
+                      >
                         {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
-                      </div>
+                      </motion.div>
                     </div>
                   </div>
                   {/* Question Text - Full Width */}
                   {!(roundType === "media" && currentState === "options_shown") && (
-                    <h2 className="text-6xl font-bold quiz-font leading-tight">
-                      {currentQuestion.question}
+                    <h2
+                      className="text-6xl font-bold quiz-font leading-tight text-center"
+                      dir={isRTL(currentQuestion.question) ? 'rtl' : 'ltr'}
+                    >
+                      <span style={{ unicodeBidi: 'isolate' }}>
+                        {currentQuestion.question}
+                      </span>
                     </h2>
                   )}
 
@@ -3051,7 +3153,7 @@ export default function ManageCompetitionPage() {
                   {roundType === "mcq" &&
                     currentQuestion?.options &&
                     currentState === "options_shown" && (
-                      <div className="w-full grid grid-cols-2 gap-6">
+                      <div className="w-full grid grid-cols-2 gap-8">
                         {currentQuestion.options.map((option, index) => (
                           <div
                             key={index}
@@ -3071,10 +3173,10 @@ export default function ManageCompetitionPage() {
                                 : "border-yellow-400 border-opacity-80 hover:border-yellow-300 hover:bg-yellow-200 hover:text-black bg-gray-800 bg-opacity-90 text-white"
                             }`}
                           >
-                            <span className="font-bold text-5xl mr-4">
-                              {String.fromCharCode(65 + index)}.
+                            <span className={`quiz-font w-full flex items-center ${isRTL(option) ? 'flex-row-reverse text-right' : ''}`}>
+                              <span dir="ltr" className="font-bold text-5xl mx-4">{String.fromCharCode(65 + index)}.</span>
+                              <span dir={isRTL(option) ? 'rtl' : 'ltr'} style={{ unicodeBidi: 'isolate' }} className="quiz-font text-5xl flex-1">{option}</span>
                             </span>
-                            <span className="quiz-font text-5xl">{option}</span>
                           </div>
                         ))}
                       </div>
@@ -3227,7 +3329,15 @@ export default function ManageCompetitionPage() {
                   {currentState === "answer_shown" && currentQuestion && (
                     <div className="bg-green-600 border-4 border-green-400 rounded-xl p-12 text-5xl">
                       <h3 className="font-bold mb-6 quiz-font">Correct Answer:</h3>
-                      <p className="quiz-font">
+                      <p
+                        className="quiz-font"
+                        dir={isRTL(
+                          typeof currentQuestion.correctAnswer === 'string'
+                            ? currentQuestion.correctAnswer
+                            : String(currentQuestion.options?.[currentQuestion.correctAnswer as number] || '')
+                        ) ? 'rtl' : 'ltr'}
+                        style={{ unicodeBidi: 'isolate' }}
+                      >
                         {typeof currentQuestion.correctAnswer === "string"
                           ? currentQuestion.correctAnswer
                           : currentQuestion.options?.[
@@ -3255,7 +3365,7 @@ export default function ManageCompetitionPage() {
                     ? currentGroup.teams?.filter((team) => activeTieTeamIds.includes(team._id))
                     : currentGroup.teams
                   )?.map((team) => (
-                    <div key={team._id} data-team-id={team._id} className="text-center bg-black bg-opacity-40 rounded-xl p-6 backdrop-blur-sm border-2 border-white border-opacity-30">
+                    <div key={team._id} data-team-id={team._id} className="text-center bg-gradient-to-br from-indigo-600/90 via-purple-600/90 to-blue-600/90 rounded-xl p-6 backdrop-blur-sm border-2 border-yellow-300/50 shadow-xl">
                       <h3 className="text-4xl font-bold mb-4 text-white">{team.name}</h3>
                       <p className="text-6xl font-mono font-bold mb-4 text-yellow-300">
                         {teamScores[team._id] || 0}
@@ -3560,6 +3670,8 @@ export default function ManageCompetitionPage() {
         .animate-float-up {
           animation: float-up 2s ease-out forwards;
         }
+
+        
       `}</style>
     </div>
   );

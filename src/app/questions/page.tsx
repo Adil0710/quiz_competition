@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -61,7 +62,15 @@ export default function QuestionsPage() {
   const [vrfFiles, setVrfFiles] = useState<FileList | null>(null);
   const [vrfUploading, setVrfUploading] = useState(false);
   const [vrfImageUrls, setVrfImageUrls] = useState<string[]>([]);
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const { toast } = useToast();
+
+  // Detect if text contains RTL scripts (Arabic, Urdu, Hebrew, etc.)
+  const isRTL = (s?: string) => {
+    if (!s) return false;
+    return /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(s);
+  };
 
   useEffect(() => {
     fetchQuestions();
@@ -244,6 +253,42 @@ export default function QuestionsPage() {
     resetForm();
   };
 
+  const handleBulkDelete = async () => {
+    if (filterType === 'all') return;
+    
+    setBulkDeleting(true);
+    try {
+      const response = await fetch(`/api/questions/bulk-delete?type=${filterType}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: `Deleted ${data.deletedCount} ${filterType.replace('_', ' ')} question(s)`
+        });
+        setIsBulkDeleteDialogOpen(false);
+        setFilterType('all');
+        fetchQuestions();
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to delete questions",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete questions",
+        variant: "destructive"
+      });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'mcq': return '📝';
@@ -298,6 +343,9 @@ export default function QuestionsPage() {
                     value={formData.question}
                     onChange={(e) => setFormData({ ...formData, question: e.target.value })}
                     placeholder="Enter your question"
+                    className={`quiz-font ${isRTL(formData.question) ? 'text-right' : ''}`}
+                    dir={isRTL(formData.question) ? 'rtl' : 'ltr'}
+                    style={{ unicodeBidi: 'isolate' }}
                     required
                   />
                 </div>
@@ -327,6 +375,9 @@ export default function QuestionsPage() {
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       placeholder="e.g., Science, History"
+                      className={`quiz-font ${isRTL(formData.category) ? 'text-right' : ''}`}
+                      dir={isRTL(formData.category) ? 'rtl' : 'ltr'}
+                      style={{ unicodeBidi: 'isolate' }}
                       required
                     />
                   </div>
@@ -391,6 +442,9 @@ export default function QuestionsPage() {
                             setFormData({ ...formData, options: newOptions });
                           }}
                           placeholder={`Option ${index + 1}`}
+                          className={`quiz-font ${isRTL(option) ? 'text-right' : ''}`}
+                          dir={isRTL(option) ? 'rtl' : 'ltr'}
+                          style={{ unicodeBidi: 'isolate' }}
                         />
                       ))}
                     </div>
@@ -457,7 +511,15 @@ export default function QuestionsPage() {
                 {formData.type === 'buzzer' && (
                   <div className="grid gap-2">
                     <Label htmlFor="answer">Answer</Label>
-                    <Input id="answer" value={formData.correctAnswer} onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} placeholder="Type the correct answer" />
+                    <Input 
+                      id="answer" 
+                      value={formData.correctAnswer} 
+                      onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} 
+                      placeholder="Type the correct answer" 
+                      className={`quiz-font ${isRTL(formData.correctAnswer) ? 'text-right' : ''}`}
+                      dir={isRTL(formData.correctAnswer) ? 'rtl' : 'ltr'}
+                      style={{ unicodeBidi: 'isolate' }}
+                    />
                   </div>
                 )}
 
@@ -476,6 +538,9 @@ export default function QuestionsPage() {
                             setFormData({ ...formData, options: newOptions });
                           }}
                           placeholder={`Option ${index + 1}`}
+                          className={`quiz-font ${isRTL(option) ? 'text-right' : ''}`}
+                          dir={isRTL(option) ? 'rtl' : 'ltr'}
+                          style={{ unicodeBidi: 'isolate' }}
                         />
                       ))}
                     </div>
@@ -666,6 +731,16 @@ export default function QuestionsPage() {
                 <SelectItem value="visual_rapid_fire">Visual Rapid Fire Only</SelectItem>
               </SelectContent>
             </Select>
+            {filterType !== 'all' && (
+              <Button 
+                variant="destructive" 
+                onClick={() => setIsBulkDeleteDialogOpen(true)}
+                disabled={filteredQuestions.length === 0}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete All {filterType.replace('_', ' ').toUpperCase()}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -700,7 +775,12 @@ export default function QuestionsPage() {
                 {filteredQuestions.map((question) => (
                   <TableRow key={question._id}>
                     <TableCell className="max-w-xs">
-                      <div className="truncate" title={question.question}>
+                      <div 
+                        className={`truncate quiz-font ${isRTL(question.question) ? 'text-right' : ''}`}
+                        title={question.question}
+                        dir={isRTL(question.question) ? 'rtl' : 'ltr'}
+                        style={{ unicodeBidi: 'isolate' }}
+                      >
                         {question.question}
                       </div>
                       {question.mediaUrl && (
@@ -717,7 +797,15 @@ export default function QuestionsPage() {
                         {getTypeIcon(question.type)} {question.type.replace('_', ' ')}
                       </Badge>
                     </TableCell>
-                    <TableCell>{question.category}</TableCell>
+                    <TableCell>
+                      <span 
+                        className={`quiz-font ${isRTL(question.category) ? 'text-right' : ''}`}
+                        dir={isRTL(question.category) ? 'rtl' : 'ltr'}
+                        style={{ unicodeBidi: 'isolate' }}
+                      >
+                        {question.category}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <Badge className={getDifficultyColor(question.difficulty)}>
                         {question.difficulty}
@@ -759,6 +847,39 @@ export default function QuestionsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all <strong>{filteredQuestions.length}</strong> questions of type <strong>{filterType.replace('_', ' ').toUpperCase()}</strong>.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleBulkDelete();
+              }}
+              disabled={bulkDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {bulkDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete All'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

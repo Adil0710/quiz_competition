@@ -133,7 +133,7 @@ export default function CreateCompetitionPage() {
           title: "Success",
           description: "Competition created successfully"
         });
-        router.push(`/competitions/competitions/${data.data._id}`);
+        router.push(`/competitions/${data.data._id}`);
       } else {
         toast({
           title: "Error",
