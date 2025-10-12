@@ -142,6 +142,8 @@ export default function Navbar() {
     localStorage.setItem("quiz-font-preference", value);
     applyFontToDocument(value);
   };
+
+  // if (pathname === "/") return null;
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-auto items-center justify-between px-4">
