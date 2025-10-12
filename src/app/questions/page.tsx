@@ -113,17 +113,25 @@ export default function QuestionsPage() {
 
     try {
       const formDataToSend = new FormData();
-      formDataToSend.append('question', formData.question);
+      // Question is optional for visual_rapid_fire
+      if (formData.type !== 'visual_rapid_fire') {
+        formDataToSend.append('question', formData.question);
+      } else if (formData.question) {
+        formDataToSend.append('question', formData.question);
+      }
       formDataToSend.append('type', formData.type);
       formDataToSend.append('category', formData.category);
       formDataToSend.append('difficulty', formData.difficulty);
       formDataToSend.append('points', formData.points.toString());
       formDataToSend.append('phase', formData.phase);
 
-      if (formData.type === 'mcq' || formData.type === 'media') {
+      if (formData.type === 'mcq') {
         formDataToSend.append('options', JSON.stringify(formData.options.filter(opt => opt.trim())));
         formDataToSend.append('correctAnswer', formData.correctAnswer);
       } else if (formData.type === 'buzzer') {
+        formDataToSend.append('options', JSON.stringify(formData.options.filter(opt => opt.trim())));
+        formDataToSend.append('correctAnswer', formData.correctAnswer);
+      } else if (formData.type === 'media') {
         formDataToSend.append('correctAnswer', formData.correctAnswer);
       } else if (formData.type === 'sequence') {
         formDataToSend.append('options', JSON.stringify(formData.options.filter(opt => opt.trim())));
@@ -336,19 +344,22 @@ export default function QuestionsPage() {
               </DialogHeader>
               <form onSubmit={handleSubmit}>
                 <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="question">Question</Label>
-                  <Textarea
-                    id="question"
-                    value={formData.question}
-                    onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                    placeholder="Enter your question"
-                    className={`quiz-font ${isRTL(formData.question) ? 'text-right' : ''}`}
-                    dir={isRTL(formData.question) ? 'rtl' : 'ltr'}
-                    style={{ unicodeBidi: 'isolate' }}
-                    required
-                  />
-                </div>
+                {/* Question field - not needed for visual_rapid_fire */}
+                {formData.type !== 'visual_rapid_fire' && (
+                  <div className="grid gap-2">
+                    <Label htmlFor="question">Question</Label>
+                    <Textarea
+                      id="question"
+                      value={formData.question}
+                      onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+                      placeholder="Enter your question"
+                      className={`quiz-font ${isRTL(formData.question) ? 'text-right' : ''}`}
+                      dir={isRTL(formData.question) ? 'rtl' : 'ltr'}
+                      style={{ unicodeBidi: 'isolate' }}
+                      required
+                    />
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
@@ -427,8 +438,8 @@ export default function QuestionsPage() {
                   </div>
                 </div>
 
-                {/* Options for MCQ and Media questions */}
-                {(formData.type === 'mcq' || formData.type === 'media') && (
+                {/* Options for MCQ questions only */}
+                {formData.type === 'mcq' && (
                   <>
                     <div className="grid gap-2">
                       <Label>Options</Label>
@@ -469,9 +480,84 @@ export default function QuestionsPage() {
                   </>
                 )}
 
+                {/* Media round - single media file with text answer */}
+                {formData.type === 'media' && (
+                  <>
+                    <div className="text-sm text-muted-foreground p-4 bg-muted rounded mb-2">
+                      Media round requires a media file (image/audio/video) and a text answer. No options needed.
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="mediaType">Media Type</Label>
+                      <Select value={formData.mediaType} onValueChange={(value: any) => setFormData({ ...formData, mediaType: value })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="image">Image</SelectItem>
+                          <SelectItem value="audio">Audio</SelectItem>
+                          <SelectItem value="video">Video</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="mediaFile">Upload Media File {editingQuestion?.mediaUrl && '(Upload new to replace)'}</Label>
+                      <Input
+                        id="mediaFile"
+                        type="file"
+                        accept={
+                          formData.mediaType === 'image' ? 'image/*' :
+                          formData.mediaType === 'audio' ? 'audio/*' : 'video/*'
+                        }
+                        onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
+                      />
+                      {/* Show existing media preview when editing */}
+                      {editingQuestion?.mediaUrl && !mediaFile && (
+                        <div className="mt-2 p-3 bg-muted rounded border">
+                          <p className="text-xs text-muted-foreground mb-2">Current media:</p>
+                          {formData.mediaType === 'image' && (
+                            <img 
+                              src={editingQuestion.mediaUrl} 
+                              alt="Current media" 
+                              className="max-w-xs max-h-40 object-contain rounded"
+                            />
+                          )}
+                          {formData.mediaType === 'audio' && (
+                            <audio controls className="w-full max-w-md">
+                              <source src={editingQuestion.mediaUrl} />
+                            </audio>
+                          )}
+                          {formData.mediaType === 'video' && (
+                            <video controls className="w-full max-w-md max-h-40">
+                              <source src={editingQuestion.mediaUrl} />
+                            </video>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="answer">Correct Answer</Label>
+                      <Input 
+                        id="answer" 
+                        value={formData.correctAnswer} 
+                        onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} 
+                        placeholder="Type the correct answer" 
+                        className={`quiz-font ${isRTL(formData.correctAnswer) ? 'text-right' : ''}`}
+                        dir={isRTL(formData.correctAnswer) ? 'rtl' : 'ltr'}
+                        style={{ unicodeBidi: 'isolate' }}
+                        required
+                      />
+                    </div>
+                  </>
+                )}
+
                 {/* Visual Rapid Fire - multiple images */}
                 {formData.type === 'visual_rapid_fire' && (
                   <>
+                    <div className="text-sm text-muted-foreground p-4 bg-muted rounded mb-2">
+                      Visual Rapid Fire round only requires multiple images. No question text, answer, or options needed.
+                    </div>
                     <div className="grid gap-2">
                       <Label>Upload Images (multiple)</Label>
                       <Input type="file" accept="image/*" multiple onChange={(e)=>setVrfFiles(e.target.files)} />
@@ -507,19 +593,55 @@ export default function QuestionsPage() {
                   </>
                 )}
 
-                {/* Buzzer - free text answer */}
+                {/* Buzzer - options with correct answer */}
                 {formData.type === 'buzzer' && (
-                  <div className="grid gap-2">
-                    <Label htmlFor="answer">Answer</Label>
-                    <Input 
-                      id="answer" 
-                      value={formData.correctAnswer} 
-                      onChange={(e)=>setFormData({...formData, correctAnswer: e.target.value})} 
-                      placeholder="Type the correct answer" 
-                      className={`quiz-font ${isRTL(formData.correctAnswer) ? 'text-right' : ''}`}
-                      dir={isRTL(formData.correctAnswer) ? 'rtl' : 'ltr'}
-                      style={{ unicodeBidi: 'isolate' }}
-                    />
+                  <>
+                    <div className="text-sm text-muted-foreground p-4 bg-muted rounded mb-2">
+                      Buzzer round requires options. Team buzzes first, then selects from options.
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Options</Label>
+                      {formData.options.map((option, index) => (
+                        <Input
+                          key={index}
+                          value={option}
+                          onChange={(e) => {
+                            const newOptions = [...formData.options];
+                            newOptions[index] = e.target.value;
+                            setFormData({ ...formData, options: newOptions });
+                          }}
+                          placeholder={`Option ${index + 1}`}
+                          className={`quiz-font ${isRTL(option) ? 'text-right' : ''}`}
+                          dir={isRTL(option) ? 'rtl' : 'ltr'}
+                          style={{ unicodeBidi: 'isolate' }}
+                        />
+                      ))}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="correctAnswer">Correct Answer</Label>
+                      <Select value={formData.correctAnswer} onValueChange={(value) => setFormData({ ...formData, correctAnswer: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select correct answer" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {formData.options.map((option, index) => (
+                            option.trim() && (
+                              <SelectItem key={index} value={option}>
+                                {option}
+                              </SelectItem>
+                            )
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+
+                {/* Rapid Fire - no additional fields needed */}
+                {formData.type === 'rapid_fire' && (
+                  <div className="text-sm text-muted-foreground p-4 bg-muted rounded">
+                    No additional fields needed for Rapid Fire questions.
                   </div>
                 )}
 
@@ -551,37 +673,6 @@ export default function QuestionsPage() {
                   </>
                 )}
 
-                {/* Media upload for media questions */}
-                {formData.type === 'media' && (
-                  <>
-                    <div className="grid gap-2">
-                      <Label htmlFor="mediaType">Media Type</Label>
-                      <Select value={formData.mediaType} onValueChange={(value: any) => setFormData({ ...formData, mediaType: value })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="image">Image</SelectItem>
-                          <SelectItem value="audio">Audio</SelectItem>
-                          <SelectItem value="video">Video</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label htmlFor="mediaFile">Upload Media File</Label>
-                      <Input
-                        id="mediaFile"
-                        type="file"
-                        accept={
-                          formData.mediaType === 'image' ? 'image/*' :
-                          formData.mediaType === 'audio' ? 'audio/*' : 'video/*'
-                        }
-                        onChange={(e) => setMediaFile(e.target.files?.[0] || null)}
-                      />
-                    </div>
-                  </>
-                )}
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={handleDialogClose}>
@@ -763,6 +854,7 @@ export default function QuestionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Question</TableHead>
+                  <TableHead>Media</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Difficulty</TableHead>
@@ -781,15 +873,51 @@ export default function QuestionsPage() {
                         dir={isRTL(question.question) ? 'rtl' : 'ltr'}
                         style={{ unicodeBidi: 'isolate' }}
                       >
-                        {question.question}
+                        {question.question || <span className="text-muted-foreground italic">Visual Rapid Fire</span>}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {/* Media preview */}
                       {question.mediaUrl && (
-                        <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                          {question.mediaType === 'image' && <Image className="h-3 w-3" />}
-                          {question.mediaType === 'audio' && <Volume2 className="h-3 w-3" />}
-                          {question.mediaType === 'video' && <Play className="h-3 w-3" />}
-                          {question.mediaType}
+                        <div className="flex items-center gap-2">
+                          {question.mediaType === 'image' && (
+                            <img 
+                              src={question.mediaUrl} 
+                              alt="Question media" 
+                              className="w-16 h-16 object-cover rounded border"
+                            />
+                          )}
+                          {question.mediaType === 'audio' && (
+                            <div className="flex items-center gap-1 text-xs">
+                              <Volume2 className="h-4 w-4 text-blue-500" />
+                              <span className="text-muted-foreground">Audio</span>
+                            </div>
+                          )}
+                          {question.mediaType === 'video' && (
+                            <div className="flex items-center gap-1 text-xs">
+                              <Play className="h-4 w-4 text-purple-500" />
+                              <span className="text-muted-foreground">Video</span>
+                            </div>
+                          )}
                         </div>
+                      )}
+                      {/* Visual Rapid Fire images */}
+                      {question.imageUrls && question.imageUrls.length > 0 && (
+                        <div className="flex items-center gap-1">
+                          <img 
+                            src={question.imageUrls[0]} 
+                            alt="VRF preview" 
+                            className="w-16 h-16 object-cover rounded border"
+                          />
+                          {question.imageUrls.length > 1 && (
+                            <span className="text-xs text-muted-foreground">
+                              +{question.imageUrls.length - 1}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {!question.mediaUrl && (!question.imageUrls || question.imageUrls.length === 0) && (
+                        <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </TableCell>
                     <TableCell>

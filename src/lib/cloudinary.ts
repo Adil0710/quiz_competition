@@ -40,4 +40,28 @@ export const deleteFromCloudinary = async (publicId: string) => {
   }
 };
 
+// Extract public ID from Cloudinary URL
+export const extractPublicId = (url: string): string | null => {
+  try {
+    if (!url) return null;
+    // URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{folder}/{public_id}.{extension}
+    // or: https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{folder}/{public_id}.{extension}
+    const parts = url.split('/upload/');
+    if (parts.length < 2) return null;
+    
+    const pathAfterUpload = parts[1];
+    // Remove version if present (starts with v followed by numbers)
+    const withoutVersion = pathAfterUpload.replace(/^v\d+\//, '');
+    
+    // Remove file extension
+    const lastDotIndex = withoutVersion.lastIndexOf('.');
+    const withoutExtension = lastDotIndex > 0 ? withoutVersion.substring(0, lastDotIndex) : withoutVersion;
+    
+    return withoutExtension;
+  } catch (error) {
+    console.error('Error extracting public ID from URL:', url, error);
+    return null;
+  }
+};
+
 export default cloudinary;

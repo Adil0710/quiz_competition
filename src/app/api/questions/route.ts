@@ -47,9 +47,17 @@ export async function POST(request: NextRequest) {
     const mediaType = formData.get('mediaType') as string;
     const imageUrlsRaw = formData.get('imageUrls') as string | null;
 
-    if (!question || !type || !category) {
+    // Question is optional for visual_rapid_fire
+    if (!type || !category) {
       return NextResponse.json(
-        { success: false, error: 'Question, type, and category are required' },
+        { success: false, error: 'Type and category are required' },
+        { status: 400 }
+      );
+    }
+    
+    if (type !== 'visual_rapid_fire' && !question) {
+      return NextResponse.json(
+        { success: false, error: 'Question is required for this type' },
         { status: 400 }
       );
     }
@@ -81,12 +89,16 @@ export async function POST(request: NextRequest) {
       mediaType: mediaUrl ? mediaType : undefined
     };
 
-    if (type === 'mcq' || type === 'media') {
+    if (type === 'mcq') {
       questionData.options = options;
       // keep whatever was sent as the correct option text or index encoded as string
       questionData.correctAnswer = correctAnswerRaw ?? undefined;
     } else if (type === 'buzzer') {
-      // free-text answer
+      questionData.options = options;
+      // Store correctAnswer as string (the option text)
+      questionData.correctAnswer = correctAnswerRaw ?? undefined;
+    } else if (type === 'media') {
+      // free-text answer for media type
       questionData.correctAnswer = correctAnswerRaw ?? undefined;
     } else if (type === 'sequence') {
       // expect options array and correct sequence as either JSON array or comma string

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Question from '@/models/Question';
-import { uploadToCloudinary, deleteFromCloudinary } from '@/lib/cloudinary';
+import { uploadToCloudinary, deleteFromCloudinary, extractPublicId } from '@/lib/cloudinary';
 import mongoose from 'mongoose';
 
 export async function GET(
@@ -63,6 +63,7 @@ request: Request,
     const correctAnswer = formData.get('correctAnswer') as string;
     const mediaFile = formData.get('mediaFile') as File;
     const mediaType = formData.get('mediaType') as string;
+    const imageUrlsRaw = formData.get('imageUrls') as string | null;
 
     const existingQuestion = await Question.findById(id);
     if (!existingQuestion) {
@@ -78,7 +79,7 @@ request: Request,
       // Delete old media if exists
       if (existingQuestion.mediaUrl) {
         try {
-          const publicId = existingQuestion.mediaUrl.split('/').pop()?.split('.')[0];
+          const publicId = extractPublicId(existingQuestion.mediaUrl);
           if (publicId) await deleteFromCloudinary(publicId);
         } catch (deleteError) {
           console.error('Failed to delete old media:', deleteError);
@@ -97,16 +98,28 @@ request: Request,
       }
     }
 
+    // Handle imageUrls for visual_rapid_fire
+    let imageUrls = existingQuestion.imageUrls;
+    if (type === 'visual_rapid_fire' && imageUrlsRaw) {
+      try {
+        const parsed = JSON.parse(imageUrlsRaw);
+        if (Array.isArray(parsed) && parsed.every((u: any) => typeof u === 'string')) {
+          imageUrls = parsed;
+        }
+      } catch {}
+    }
+
     const updateData: any = {
       question,
       type,
       category,
       difficulty: difficulty || 'medium',
       points,
-      options: type === 'mcq' || type === 'media' ? options : undefined,
-      correctAnswer: type !== 'rapid_fire' ? correctAnswer : undefined,
+      options: (type === 'mcq' || type === 'sequence' || type === 'buzzer') ? options : undefined,
+      correctAnswer: (type !== 'rapid_fire' && type !== 'visual_rapid_fire') ? correctAnswer : undefined,
       mediaUrl: mediaUrl || undefined,
-      mediaType: mediaUrl ? mediaType : undefined
+      mediaType: mediaUrl ? mediaType : undefined,
+      imageUrls: type === 'visual_rapid_fire' ? imageUrls : undefined
     };
 
     const updatedQuestion = await Question.findByIdAndUpdate(
@@ -150,10 +163,22 @@ request: Request,
     // Delete media from Cloudinary if exists
     if (question.mediaUrl) {
       try {
-        const publicId = question.mediaUrl.split('/').pop()?.split('.')[0];
+        const publicId = extractPublicId(question.mediaUrl);
         if (publicId) await deleteFromCloudinary(publicId);
       } catch (deleteError) {
         console.error('Failed to delete media:', deleteError);
+      }
+    }
+
+    // Delete imageUrls from Cloudinary if exists (for visual_rapid_fire)
+    if (question.imageUrls && Array.isArray(question.imageUrls)) {
+      for (const imageUrl of question.imageUrls) {
+        try {
+          const publicId = extractPublicId(imageUrl);
+          if (publicId) await deleteFromCloudinary(publicId);
+        } catch (deleteError) {
+          console.error('Failed to delete image:', deleteError);
+        }
       }
     }
 

@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     const requiredByType: Record<string, string[]> = {
       mcq: ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct', 'Category', 'Difficulty', 'Points', 'Phase'],
-      buzzer: ['Question', 'Answer', 'Category', 'Difficulty', 'Points', 'Phase'],
+      buzzer: ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct', 'Category', 'Difficulty', 'Points', 'Phase'],
       sequence: ['Question', 'Option 1', 'Option 2', 'Option 3', 'Option 4', 'Correct Sequence', 'Category', 'Difficulty', 'Points', 'Phase'],
     };
 
@@ -117,13 +117,17 @@ export async function POST(req: NextRequest) {
           });
         } else if (type === 'buzzer') {
           const question = String(row['Question'] || '').trim();
-          const answer = String(row['Answer'] || '').trim();
+          const opts = [row['Option A'], row['Option B'], row['Option C'], row['Option D']].map((v:any)=>String(v||'').trim());
+          const corrRaw = row['Correct'];
           if (!question) throw new Error('Question is required');
-          if (!answer) throw new Error('Answer is required');
+          if (opts.filter(o=>!!o).length < 2) throw new Error('At least two options required');
+          const correctAnswer = parseCorrectForMcq(corrRaw, opts);
+          if (correctAnswer === null) throw new Error('Invalid Correct value');
           toInsert.push({
             question,
             type: 'buzzer',
-            correctAnswer: answer,
+            options: opts,
+            correctAnswer: opts[correctAnswer], // Store as string (the actual option text)
             difficulty: common.difficulty,
             category: common.category,
             points: common.points,
