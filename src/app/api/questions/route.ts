@@ -79,7 +79,6 @@ export async function POST(request: NextRequest) {
     const phase = ['league', 'semi_final', 'final'].includes(phaseRaw) ? phaseRaw : 'league';
 
     const questionData: any = {
-      question,
       type,
       category,
       difficulty: difficulty || 'medium',
@@ -88,6 +87,11 @@ export async function POST(request: NextRequest) {
       mediaUrl: mediaUrl || undefined,
       mediaType: mediaUrl ? mediaType : undefined
     };
+
+    // Only add question field if it exists (optional for visual_rapid_fire)
+    if (question) {
+      questionData.question = question;
+    }
 
     if (type === 'mcq') {
       questionData.options = options;
@@ -144,9 +148,11 @@ export async function POST(request: NextRequest) {
       .select('question type options correctAnswer mediaUrl mediaType imageUrls difficulty category points phase isUsed')
       .lean();
     return NextResponse.json({ success: true, data: newQuestion }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Failed to create question:', error);
+    console.error('Error details:', error.message);
     return NextResponse.json(
-      { success: false, error: 'Failed to create question' },
+      { success: false, error: error.message || 'Failed to create question' },
       { status: 500 }
     );
   }

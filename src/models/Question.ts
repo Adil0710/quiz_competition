@@ -21,7 +21,10 @@ export interface IQuestion extends Document {
 const QuestionSchema: Schema = new Schema({
   question: {
     type: String,
-    required: [true, 'Question text is required'],
+    required: function(this: IQuestion) {
+      // Question is optional for visual_rapid_fire
+      return this.type !== 'visual_rapid_fire';
+    },
     trim: true
   },
   type: {

@@ -1868,10 +1868,10 @@ export default function ManageCompetitionPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Question Display - Hide for rapid fire */}
+                  {/* Question Display - Hide for rapid fire and visual rapid fire */}
                   {currentState !== "idle" && (
                     <div className="mb-6">
-                      {roundType !== "rapid_fire" && (
+                      {roundType !== "rapid_fire" && roundType !== "visual_rapid_fire" && currentQuestion.question && (
                         <h3
                           className={`text-xl font-semibold mb-4 quiz-font ${isRTL(currentQuestion.question) ? 'text-right' : ''}`}
                           dir={isRTL(currentQuestion.question) ? 'rtl' : 'ltr'}
@@ -3059,7 +3059,9 @@ export default function ManageCompetitionPage() {
                     </div>
                   </div>
                   {/* Question Text - Full Width */}
-                  {!(roundType === "media" && currentState === "options_shown") && (
+                  {!(roundType === "media" && currentState === "options_shown") && 
+                   roundType !== "visual_rapid_fire" && 
+                   currentQuestion.question && (
                     <h2
                       className="text-6xl font-bold quiz-font leading-tight text-center"
                       dir={isRTL(currentQuestion.question) ? 'rtl' : 'ltr'}

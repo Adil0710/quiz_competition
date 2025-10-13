@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2, Check } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Question {
@@ -78,7 +78,7 @@ export default function QuestionsPage() {
 
   useEffect(() => {
     let filtered = questions.filter(question =>
-      question.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (question.question?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
       question.category.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -146,10 +146,15 @@ export default function QuestionsPage() {
         }
       } else if (formData.type === 'visual_rapid_fire') {
         // Attach uploaded image URLs for visual rapid fire
-        if (vrfImageUrls.length === 0) {
+        if (vrfImageUrls.length > 0) {
+          // New images uploaded
+          formDataToSend.append('imageUrls', JSON.stringify(vrfImageUrls));
+        } else if (editingQuestion?.imageUrls && editingQuestion.imageUrls.length > 0) {
+          // Keep existing images when editing
+          formDataToSend.append('imageUrls', JSON.stringify(editingQuestion.imageUrls));
+        } else {
           throw new Error('Please upload at least one image for Visual Rapid Fire');
         }
-        formDataToSend.append('imageUrls', JSON.stringify(vrfImageUrls));
       }
 
       const url = editingQuestion ? `/api/questions/${editingQuestion._id}` : '/api/questions';
@@ -557,37 +562,102 @@ export default function QuestionsPage() {
                   <>
                     <div className="text-sm text-muted-foreground p-4 bg-muted rounded mb-2">
                       Visual Rapid Fire round only requires multiple images. No question text, answer, or options needed.
+                      <br />
+                      <strong>Step 1:</strong> Select images → <strong>Step 2:</strong> Click "Upload Images" → <strong>Step 3:</strong> Click "Save Question"
                     </div>
                     <div className="grid gap-2">
                       <Label>Upload Images (multiple)</Label>
-                      <Input type="file" accept="image/*" multiple onChange={(e)=>setVrfFiles(e.target.files)} />
+                      <Input 
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        onChange={(e)=>setVrfFiles(e.target.files)}
+                      />
+                      {vrfFiles && vrfFiles.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {vrfFiles.length} file(s) selected
+                        </p>
+                      )}
                       <div>
-                        <Button type="button" disabled={!vrfFiles || vrfUploading} onClick={async()=>{
-                          if (!vrfFiles || vrfFiles.length === 0) return;
-                          setVrfUploading(true);
-                          try {
-                            const fd = new FormData();
-                            fd.append('folder', 'visual-rapid-fire');
-                            Array.from(vrfFiles).forEach((file, idx)=> fd.append(`file${idx}`, file));
-                            const res = await fetch('/api/uploads', { method: 'POST', body: fd });
-                            const data = await res.json();
-                            if (data.success) {
-                              const urls: string[] = (data.files || []).map((f:any)=>f.url).filter(Boolean);
-                              setVrfImageUrls(urls);
+                        <Button 
+                          type="button" 
+                          disabled={!vrfFiles || vrfFiles.length === 0 || vrfUploading} 
+                          onClick={async()=>{
+                            if (!vrfFiles || vrfFiles.length === 0) {
+                              toast({
+                                title: "Error",
+                                description: "Please select images first",
+                                variant: "destructive"
+                              });
+                              return;
                             }
-                          } finally {
-                            setVrfUploading(false);
-                          }
-                        }}>{vrfUploading ? 'Uploading...' : 'Upload Images'}</Button>
+                            setVrfUploading(true);
+                            try {
+                              const fd = new FormData();
+                              fd.append('folder', 'visual-rapid-fire');
+                              Array.from(vrfFiles).forEach((file, idx)=> {
+                                fd.append(`file${idx}`, file);
+                              });
+                              
+                              const res = await fetch('/api/uploads', { method: 'POST', body: fd });
+                              const data = await res.json();
+                              
+                              if (data.success && data.files) {
+                                const urls: string[] = data.files.map((f:any)=>f.url).filter(Boolean);
+                                setVrfImageUrls(urls);
+                                toast({
+                                  title: "Success",
+                                  description: `${urls.length} images uploaded successfully! Now click Save Question.`,
+                                });
+                              } else {
+                                throw new Error(data.error || 'Upload failed');
+                              }
+                            } catch (error: any) {
+                              console.error('Upload error:', error);
+                              toast({
+                                title: "Upload Failed",
+                                description: error.message || "Failed to upload images",
+                                variant: "destructive"
+                              });
+                            } finally {
+                              setVrfUploading(false);
+                            }
+                        }}>
+                          {vrfUploading ? 'Uploading...' : 'Upload Images'}
+                        </Button>
                       </div>
                     </div>
                     {vrfImageUrls.length > 0 && (
-                      <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                        {vrfImageUrls.map((u, i)=> (
-                          <div key={i} className="relative border rounded overflow-hidden">
-                            <img src={u} alt={`img-${i}`} className="w-full h-24 object-cover" />
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+                          <Check className="h-4 w-4" />
+                          {vrfImageUrls.length} images uploaded and ready
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                          {vrfImageUrls.map((u, i)=> (
+                            <div key={i} className="relative border rounded overflow-hidden">
+                              <img src={u} alt={`img-${i}`} className="w-full h-24 object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Show existing images when editing */}
+                    {editingQuestion?.imageUrls && editingQuestion.imageUrls.length > 0 && vrfImageUrls.length === 0 && (
+                      <div className="space-y-2 mt-3 p-3 bg-muted rounded border">
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Current images ({editingQuestion.imageUrls.length}):
+                        </p>
+                        <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                          {editingQuestion.imageUrls.map((url, i)=> (
+                            <div key={i} className="relative border rounded overflow-hidden">
+                              <img src={url} alt={`existing-${i}`} className="w-full h-24 object-cover" />
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Upload new images to replace these
+                        </p>
                       </div>
                     )}
                   </>
