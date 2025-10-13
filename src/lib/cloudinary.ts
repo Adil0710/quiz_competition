@@ -1,5 +1,13 @@
 import { v2 as cloudinary } from 'cloudinary';
 
+// Verify environment variables are loaded
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.error('❌ Cloudinary credentials missing! Check your .env file');
+  console.log('CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME ? '✓' : '✗');
+  console.log('CLOUDINARY_API_KEY:', process.env.CLOUDINARY_API_KEY ? '✓' : '✗');
+  console.log('CLOUDINARY_API_SECRET:', process.env.CLOUDINARY_API_SECRET ? '✓' : '✗');
+}
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -12,13 +20,21 @@ export const uploadToCloudinary = async (file: File, folder: string = 'quiz-medi
     const buffer = Buffer.from(bytes);
 
     return new Promise((resolve, reject) => {
+      // Don't pass api_key in options - it's already in config
+      // This prevents signature issues
+      const uploadOptions: any = {
+        resource_type: 'auto',
+        folder: folder,
+        // Use timestamp to ensure unique signature
+        use_filename: false,
+        unique_filename: true,
+      };
+
       cloudinary.uploader.upload_stream(
-        {
-          resource_type: 'auto',
-          folder: folder,
-        },
+        uploadOptions,
         (error, result) => {
           if (error) {
+            console.error('Cloudinary upload error:', error);
             reject(error);
           } else {
             resolve(result);
@@ -27,6 +43,7 @@ export const uploadToCloudinary = async (file: File, folder: string = 'quiz-medi
       ).end(buffer);
     });
   } catch (error) {
+    console.error('Upload to Cloudinary failed:', error);
     throw new Error('Failed to upload file to Cloudinary');
   }
 };
