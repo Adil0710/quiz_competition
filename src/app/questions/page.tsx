@@ -189,7 +189,7 @@ export default function QuestionsPage() {
         variant: "destructive"
       });
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
