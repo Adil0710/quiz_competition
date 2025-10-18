@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 function makeWorkbook(type: 'mcq'|'buzzer'|'sequence') {
   const headerByType: Record<typeof type, string[]> = {
     mcq: ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct', 'Category', 'Difficulty', 'Points', 'Phase'],
-    buzzer: ['Question', 'Answer', 'Category', 'Difficulty', 'Points', 'Phase'],
+    buzzer: ['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct', 'Category', 'Difficulty', 'Points', 'Phase'],
     sequence: ['Question', 'Option 1', 'Option 2', 'Option 3', 'Option 4', 'Correct Sequence', 'Category', 'Difficulty', 'Points', 'Phase'],
   } as const;
 
@@ -22,9 +22,13 @@ function makeWorkbook(type: 'mcq'|'buzzer'|'sequence') {
       'Phase': 'league',
     },
     buzzer: {
-      'Question': '2 + 2 = ?',
-      'Answer': '4',
-      'Category': 'Math',
+      'Question': 'What is the capital of Pakistan?',
+      'Option A': 'Karachi',
+      'Option B': 'Lahore',
+      'Option C': 'Islamabad',
+      'Option D': 'Peshawar',
+      'Correct': 'C',
+      'Category': 'Geography',
       'Difficulty': 'easy',
       'Points': 10,
       'Phase': 'league',
