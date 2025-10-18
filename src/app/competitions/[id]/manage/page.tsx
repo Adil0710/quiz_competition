@@ -102,6 +102,34 @@ export default function ManageCompetitionPage() {
     ],
   };
 
+  const handleContinueAfterTie = () => {
+    // Clear tie-breaker state
+    setTieBreakerGroups([]);
+    setCurrentTieGroupIndex(0);
+    setShowTieBreakerResultModal(false);
+
+    // Ensure we are ready to start the current phase's normal rounds from round 1
+    setCurrentRoundIndex(0);
+    const rounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
+    const firstRoundType = rounds[0].type;
+    setRoundType(firstRoundType as any);
+    loadQuestions(firstRoundType, currentPhase);
+
+    // Focus presentation container if applicable
+    if (isPresenting) {
+      setTimeout(() => presentRef.current?.focus(), 0);
+    }
+  };
+
+  const computeTieGroupResult = (ids: string[]) => {
+    const scores = ids.map((id) => ({ id, score: teamScores[id] ?? 0 }));
+    if (scores.length === 0) return { winners: [] as string[], losers: [] as string[] };
+    const maxScore = Math.max(...scores.map((s) => s.score));
+    const winners = scores.filter((s) => s.score === maxScore).map((s) => s.id);
+    const losers = scores.filter((s) => s.score !== maxScore).map((s) => s.id);
+    return { winners, losers };
+  };
+
   
 
   // Default timer durations per round for T key toggle
@@ -165,6 +193,8 @@ export default function ManageCompetitionPage() {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imagesPreloaded, setImagesPreloaded] = useState<boolean[]>([]);
+  const [isCurrentMediaReady, setIsCurrentMediaReady] = useState(false);
+  const [isCurrentMediaPlaying, setIsCurrentMediaPlaying] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
   const [showRoundSummaryModal, setShowRoundSummaryModal] = useState(false);
@@ -181,6 +211,9 @@ export default function ManageCompetitionPage() {
   const [tieBreakerGroups, setTieBreakerGroups] = useState<string[][]>([]);
   const [currentTieGroupIndex, setCurrentTieGroupIndex] = useState(0);
   const activeTieTeamIds: string[] = tieBreakerMode ? (tieBreakerGroups[currentTieGroupIndex] || []) : [];
+  const [showTieBreakerResultModal, setShowTieBreakerResultModal] = useState(false);
+  const [tieBreakerWinners, setTieBreakerWinners] = useState<string[]>([]);
+  const [tieBreakerLosers, setTieBreakerLosers] = useState<string[]>([]);
   // Global settings state
   const [globalSettings, setGlobalSettings] = useState({
     mcqPoints: 10,
@@ -197,6 +230,16 @@ export default function ManageCompetitionPage() {
   });
 
   const presentRef = useRef<HTMLDivElement | null>(null);
+  const prevPhaseRef = useRef<string | null>(null);
+  const getTeamById = (id: string) => {
+    const fromStore = (teams as any[])?.find((t: any) => String(t?._id) === String(id));
+    if (fromStore) return fromStore;
+    for (const g of (competition?.groups as any[]) || []) {
+      const found = (g?.teams || []).find((t: any) => t && String(t._id) === String(id));
+      if (found) return found;
+    }
+    return null;
+  };
   
   // Generate star configurations once
   const starConfigs = useMemo(() => {
@@ -1059,10 +1102,10 @@ export default function ManageCompetitionPage() {
         "MCQ: Showing options with 15s timer, state set to options_shown"
       );
     } else if (roundType === "media") {
-      // Start timer immediately for media on options show
-      startTimer(15);
-      playTimerAudio();
-      console.log("Media: Starting 15s timer on options show");
+      // Do NOT start timer here. Start only after media element finishes loading (onLoad/onCanPlayThrough in presentation).
+      console.log("Media: Waiting for media to load before starting timer");
+      setIsCurrentMediaReady(false);
+      setIsCurrentMediaPlaying(false);
     } else if (roundType === "buzzer") {
       // For buzzer, only show options; timer will start when a team is selected
       console.log("Buzzer: Showing options for team selection (timer starts on team selection)");
@@ -1079,11 +1122,7 @@ export default function ManageCompetitionPage() {
       // For visual rapid fire, only reset image index - images already preloaded
       console.log("Visual Rapid Fire: Resetting image index");
       setCurrentImageIndex(0);
-      // Start timer immediately since images are already preloaded
-      if (!isTimerActive) {
-        startTimer(60);
-        playTimerAudio();
-      }
+      // Do NOT start timer here; start when the first image is confirmed loaded (managed by effect below)
     }
 
     // Log the state after setting
@@ -1121,6 +1160,28 @@ export default function ManageCompetitionPage() {
       stopTimer();
       stopAllAudio();
     } else {
+      // Guard media: start only when content is actually ready
+      if (roundType === "media" && currentState === "options_shown") {
+        const mt = currentQuestion?.mediaType;
+        if ((mt === "audio" || mt === "video") && !isCurrentMediaPlaying) {
+          console.log("Timer start prevented: media not playing yet");
+          return;
+        }
+        if (mt === "image" && !isCurrentMediaReady) {
+          console.log("Timer start prevented: image not loaded yet");
+          return;
+        }
+      }
+      // Guard: do not start timer until current image is ready in visual rapid fire
+      if (
+        roundType === "visual_rapid_fire" &&
+        currentState === "options_shown" &&
+        !imagesPreloaded[currentImageIndex]
+      ) {
+        console.log("Timer start prevented: visual rapid fire image not loaded yet");
+        return;
+      }
+
       // Resume from remaining time; store will use last timerDuration if 0
       startTimer();
       playTimerAudio();
@@ -1232,6 +1293,56 @@ export default function ManageCompetitionPage() {
     }
   }, [currentQuestion]);
 
+  // Visual Rapid Fire: auto pause/resume timer depending on image readiness
+  useEffect(() => {
+    if (roundType !== "visual_rapid_fire" || currentState !== "options_shown") return;
+
+    const ready = imagesPreloaded[currentImageIndex];
+    if (!ready) {
+      if (isTimerActive) {
+        console.log("VRF: Current image not ready, pausing timer");
+        stopTimer();
+        stopAllAudio();
+      }
+      return;
+    }
+
+    // If ready and timer not active, start/resume
+    if (!isTimerActive) {
+      if (timeLeft > 0) {
+        console.log("VRF: Image ready, resuming timer");
+        startTimer();
+      } else {
+        console.log("VRF: Image ready, starting 60s timer");
+        startTimer(60);
+      }
+      playTimerAudio();
+    }
+  }, [roundType, currentState, currentImageIndex, imagesPreloaded, isTimerActive, timeLeft, startTimer]);
+
+  // Start tie-breaker only when transitioning phases where selection is needed
+  useEffect(() => {
+    if (prevPhaseRef.current === 'league' && currentPhase === 'semi_final') {
+      const started = startTieBreakerIfNeeded();
+      if (started) {
+        toast({
+          title: 'Tie-breaker Started',
+          description: 'Detected ties from league phase. Starting buzzer tie-breaker before semi-final.',
+        });
+      }
+    }
+    if (prevPhaseRef.current === 'semi_final' && currentPhase === 'final') {
+      const started = startTieBreakerIfNeeded();
+      if (started) {
+        toast({
+          title: 'Tie-breaker Started',
+          description: 'Detected ties from semi-final. Starting buzzer tie-breaker before final.',
+        });
+      }
+    }
+    prevPhaseRef.current = currentPhase;
+  }, [currentPhase]);
+
   const handleNextQuestion = () => {
     // Stop all audio when moving to next question
     stopAllAudio();
@@ -1269,13 +1380,25 @@ export default function ManageCompetitionPage() {
           setRoundType("buzzer" as any);
           loadQuestions("buzzer", currentPhase);
         } else {
-          // All tie groups processed — end tie-breakers and show summary
+          // All tie groups processed — compute winners/losers and show tie-breaker result modal
+          const allWinners: string[] = [];
+          const allLosers: string[] = [];
+          tieBreakerGroups.forEach((ids) => {
+            const { winners, losers } = computeTieGroupResult(ids);
+            allWinners.push(...winners);
+            allLosers.push(...losers);
+          });
+
+          setTieBreakerWinners(Array.from(new Set(allWinners)));
+          setTieBreakerLosers(Array.from(new Set(allLosers)));
+          setShowTieBreakerResultModal(true);
+
+          // Exit tie-breaker mode, keep phase as-is; rounds will proceed after user continues
           setTieBreakerMode(false);
-          setTieBreakerGroups([]);
-          setCurrentTieGroupIndex(0);
+          // Keep groups for reference until user continues, then clear in handler
+          // Do not show group summary here; we show a dedicated tie-breaker result
           resetQuestion();
           setState("idle");
-          setShowGroupSummaryModal(true);
         }
         return;
       }
@@ -1297,24 +1420,34 @@ export default function ManageCompetitionPage() {
         setState("idle");
       } else {
         // All rounds completed for this phase
-        // Attempt to start tie-breakers automatically if any ties exist
-        const started = startTieBreakerIfNeeded();
-        if (!started) {
+        if (currentPhase === "league" || currentPhase === "semi_final") {
+          // Do NOT auto-start tie-breakers in league or semi-final; defer to phase transition
           toast({
             title: "Phase Complete",
             description: `All rounds in ${currentPhase} phase completed!`,
           });
           resetQuestion();
           setState("idle");
-          if (currentPhase === "league" && roundType === "buzzer") {
+          if (roundType === "buzzer") {
             setShowGroupSummaryModal(true);
           }
-          // If this is the Final phase, show the Final Winner overlay
-          if (currentPhase === "final") {
-            const winner = computeFinalWinnerTeam();
-            setFinalWinnerTeamId(winner?._id || null);
-            setWinnerRevealed(false);
-            setShowFinalWinnerModal(true);
+        } else {
+          // For final, preserve existing behavior (allow tie-breaker for champion if tied)
+          const started = startTieBreakerIfNeeded();
+          if (!started) {
+            toast({
+              title: "Phase Complete",
+              description: `All rounds in ${currentPhase} phase completed!`,
+            });
+            resetQuestion();
+            setState("idle");
+            // If this is the Final phase, show the Final Winner overlay
+            if (currentPhase === "final") {
+              const winner = computeFinalWinnerTeam();
+              setFinalWinnerTeamId(winner?._id || null);
+              setWinnerRevealed(false);
+              setShowFinalWinnerModal(true);
+            }
           }
         }
       }
@@ -1497,8 +1630,20 @@ export default function ManageCompetitionPage() {
       setCompletedRoundInfo(null);
       setPendingNextRoundInfo(null);
       setPendingNextRoundIndex(null);
+      // Ensure keyboard shortcuts work immediately in presentation mode
+      // by restoring focus to the presentation container after the modal closes
+      if (isPresenting) {
+        setTimeout(() => {
+          presentRef.current?.focus();
+        }, 0);
+      }
     } else {
       setShowRoundSummaryModal(false);
+      if (isPresenting) {
+        setTimeout(() => {
+          presentRef.current?.focus();
+        }, 0);
+      }
     }
   };
 
@@ -1882,6 +2027,63 @@ export default function ManageCompetitionPage() {
                         </h3>
                       )}
 
+        {/* Tie-breaker Result Modal - Presentation overlay */}
+        {isPresenting && showTieBreakerResultModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[85] p-6">
+            <div className="bg-gradient-to-br from-indigo-700 to-purple-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
+                <h2 className="text-3xl font-bold">Tie-breaker Results</h2>
+              </div>
+              <p className="text-center text-lg text-indigo-100 mb-6">
+                {currentPhase === "semi_final" ? "Proceeding to Semi-Final" : currentPhase === "final" ? "Proceeding to Final" : "Next Phase"}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-xl font-semibold text-green-300 mb-2">Proceeding Teams</h4>
+                  <div className="space-y-2">
+                    {tieBreakerWinners.length === 0 && (
+                      <div className="text-sm text-indigo-200">No winners detected.</div>
+                    )}
+                    {tieBreakerWinners.map((id) => {
+                      const t = getTeamById(id);
+                      return (
+                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-green-300/40">
+                          <div className="font-bold text-white">{t?.name || id}</div>
+                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-xl font-semibold text-red-300 mb-2">Eliminated Teams</h4>
+                  <div className="space-y-2">
+                    {tieBreakerLosers.length === 0 && (
+                      <div className="text-sm text-indigo-200">No eliminated teams.</div>
+                    )}
+                    {tieBreakerLosers.map((id) => {
+                      const t = getTeamById(id);
+                      return (
+                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-red-300/40">
+                          <div className="font-bold text-white">{t?.name || id}</div>
+                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowTieBreakerResultModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">Close</Button>
+                <Button onClick={handleContinueAfterTie} className="bg-blue-500 hover:bg-blue-600 text-white">
+                  {currentPhase === "semi_final" ? "Proceed to Semi-Final Rounds" : currentPhase === "final" ? "Proceed to Final Rounds" : "Continue"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
                       {/* Media Display - Only show when options are shown for media rounds */}
                       {currentQuestion.mediaUrl &&
                         currentState === "options_shown" && (
@@ -1892,6 +2094,13 @@ export default function ManageCompetitionPage() {
                                   src={currentQuestion.mediaUrl}
                                   alt="Question media"
                                   className="max-w-5xl max-h-[36rem] md:max-h-[42rem] object-contain mx-auto rounded-lg shadow-lg"
+                                  onLoad={() => {
+                                    setIsCurrentMediaReady(true);
+                                    if (!isPresenting && !isTimerActive && currentState === "options_shown") {
+                                      startTimer(15);
+                                      playTimerAudio();
+                                    }
+                                  }}
                                 />
                               </div>
                             )}
@@ -1915,6 +2124,26 @@ export default function ManageCompetitionPage() {
                                 <audio
                                   controls
                                   className="w-full max-w-md mx-auto"
+                                  autoPlay={!isPresenting}
+                                  playsInline
+                                  onCanPlayThrough={(e) => {
+                                    setIsCurrentMediaReady(true);
+                                    if (!isPresenting) {
+                                      e.currentTarget.play().catch(console.error);
+                                    }
+                                  }}
+                                  onPlay={() => {
+                                    setIsCurrentMediaPlaying(true);
+                                    if (!isPresenting && !isTimerActive && currentState === "options_shown") {
+                                      if (timeLeft > 0) {
+                                        startTimer();
+                                      } else {
+                                        startTimer(15);
+                                      }
+                                      playTimerAudio();
+                                    }
+                                  }}
+                                  onPause={() => setIsCurrentMediaPlaying(false)}
                                 >
                                   <source src={currentQuestion.mediaUrl} />
                                   Your browser does not support the audio
@@ -1927,6 +2156,25 @@ export default function ManageCompetitionPage() {
                                 <video
                                   controls
                                   className="w-full max-w-2xl mx-auto rounded-lg shadow-lg"
+                                  autoPlay={!isPresenting}
+                                  playsInline
+                                  onCanPlayThrough={(e) => {
+                                    setIsCurrentMediaReady(true);
+                                    if (!isPresenting) {
+                                      (e.currentTarget as HTMLVideoElement).play().catch(console.error);
+                                    }
+                                  }}
+                                  onPlay={() => {
+                                    if (!isPresenting && !isTimerActive && currentState === "options_shown") {
+                                      if (timeLeft > 0) {
+                                        startTimer();
+                                      } else {
+                                        startTimer(15);
+                                      }
+                                      playTimerAudio();
+                                    }
+                                  }}
+                                  onPause={() => setIsCurrentMediaPlaying(false)}
                                 >
                                   <source src={currentQuestion.mediaUrl} />
                                   Your browser does not support the video
@@ -2581,6 +2829,67 @@ export default function ManageCompetitionPage() {
           </Dialog>
         )}
 
+        {/* Tie-breaker Result Modal (Admin) */}
+        {!isPresenting && (
+          <Dialog open={showTieBreakerResultModal} onOpenChange={setShowTieBreakerResultModal}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center">
+                  <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
+                  Tie-breaker Results - {currentPhase === "semi_final" ? "Proceeding to Semi-Final" : currentPhase === "final" ? "Proceeding to Final" : "Next Phase"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6">
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                  <p className="text-indigo-800">The tie-breaker has concluded. Here's who proceeds and who is out.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold text-green-700 mb-2">Proceeding Teams</h4>
+                    <div className="space-y-2">
+                      {tieBreakerWinners.length === 0 && (
+                        <div className="text-sm text-gray-500">No winners detected.</div>
+                      )}
+                      {tieBreakerWinners.map((id) => {
+                        const t = getTeamById(id);
+                        return (
+                          <div key={id} className="p-3 rounded-lg border bg-green-50 border-green-200">
+                            <div className="font-semibold text-green-800">{t?.name || id}</div>
+                            <div className="text-xs text-green-700">{t?.school?.name || ""}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-red-700 mb-2">Eliminated Teams</h4>
+                    <div className="space-y-2">
+                      {tieBreakerLosers.length === 0 && (
+                        <div className="text-sm text-gray-500">No eliminated teams.</div>
+                      )}
+                      {tieBreakerLosers.map((id) => {
+                        const t = getTeamById(id);
+                        return (
+                          <div key={id} className="p-3 rounded-lg border bg-red-50 border-red-200">
+                            <div className="font-semibold text-red-800">{t?.name || id}</div>
+                            <div className="text-xs text-red-700">{t?.school?.name || ""}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="flex gap-3">
+                <Button variant="outline" onClick={() => setShowTieBreakerResultModal(false)}>Close</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleContinueAfterTie}>
+                  {currentPhase === "semi_final" ? "Proceed to Semi-Final Rounds" : currentPhase === "final" ? "Proceed to Final Rounds" : "Continue"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
         {/* Round Summary Modal - Admin screen */}
         {!isPresenting && (
           <Dialog open={showRoundSummaryModal} onOpenChange={setShowRoundSummaryModal}>
@@ -3095,7 +3404,9 @@ export default function ManageCompetitionPage() {
                                     "Image loaded, starting timer for",
                                     roundType
                                   );
+                                  setIsCurrentMediaReady(true);
                                   if (!isTimerActive && currentState === "options_shown") {
+                                    // For media round, start only after load
                                     startTimer(roundType === "media" ? 15 : 60);
                                     playTimerAudio(); // Play timer sound
                                   }
@@ -3106,16 +3417,29 @@ export default function ManageCompetitionPage() {
                               <audio
                                 controls
                                 className="w-full max-w-md"
-                                onCanPlayThrough={() => {
+                                autoPlay
+                                playsInline
+                                onCanPlayThrough={(e) => {
                                   console.log(
-                                    "Audio loaded, starting timer for",
+                                    "Audio can play through",
                                     roundType
                                   );
+                                  setIsCurrentMediaReady(true);
+                                  // Attempt autoplay
+                                  e.currentTarget.play().catch(console.error);
+                                }}
+                                onPlay={() => {
+                                  setIsCurrentMediaPlaying(true);
                                   if (!isTimerActive && currentState === "options_shown") {
-                                    startTimer(15);
-                                    playTimerAudio(); // Play timer sound
+                                    if (timeLeft > 0) {
+                                      startTimer();
+                                    } else {
+                                      startTimer(15);
+                                    }
+                                    playTimerAudio();
                                   }
                                 }}
+                                onPause={() => setIsCurrentMediaPlaying(false)}
                               >
                                 <source
                                   src={currentQuestion.mediaUrl}
@@ -3128,16 +3452,29 @@ export default function ManageCompetitionPage() {
                               <video
                                 controls
                                 className="max-w-5xl max-h-[36rem] md:max-h-[42rem] rounded-lg shadow-lg"
-                                onCanPlayThrough={() => {
+                                autoPlay
+                                playsInline
+                                onCanPlayThrough={(e) => {
                                   console.log(
-                                    "Video loaded, starting timer for",
+                                    "Video can play through",
                                     roundType
                                   );
+                                  setIsCurrentMediaReady(true);
+                                  // Attempt autoplay
+                                  (e.currentTarget as HTMLVideoElement).play().catch(console.error);
+                                }}
+                                onPlay={() => {
+                                  setIsCurrentMediaPlaying(true);
                                   if (!isTimerActive && currentState === "options_shown") {
-                                    startTimer(15);
-                                    playTimerAudio(); // Play timer sound
+                                    if (timeLeft > 0) {
+                                      startTimer();
+                                    } else {
+                                      startTimer(15);
+                                    }
+                                    playTimerAudio();
                                   }
                                 }}
+                                onPause={() => setIsCurrentMediaPlaying(false)}
                               >
                                 <source
                                   src={currentQuestion.mediaUrl}
