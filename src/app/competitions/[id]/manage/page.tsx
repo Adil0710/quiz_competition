@@ -1238,12 +1238,22 @@ export default function ManageCompetitionPage() {
         title: "New Group Started",
         description: `Starting Phase 1 for ${nextGroup.name}`,
       });
+
+      // Restore focus in presentation mode
+      if (isPresenting) {
+        setTimeout(() => presentRef.current?.focus(), 0);
+      }
     } else {
       toast({
         title: "All Groups Complete",
         description: "All groups have completed Phase 1!",
       });
       setShowGroupSummaryModal(false);
+
+      // Restore focus in presentation mode
+      if (isPresenting) {
+        setTimeout(() => presentRef.current?.focus(), 0);
+      }
     }
   };
 
@@ -2026,6 +2036,73 @@ export default function ManageCompetitionPage() {
                           </span>
                         </h3>
                       )}
+
+        {/* Group Summary Modal - Presentation overlay */}
+        {isPresenting && showGroupSummaryModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[80] p-6">
+            <div className="bg-gradient-to-br from-green-700 to-emerald-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
+                <h2 className="text-3xl font-bold">Phase 1 Complete - {currentGroup?.name}</h2>
+              </div>
+              <div className="bg-white/10 border border-white/20 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-lg mb-2">🎉 Buzzer Round Completed!</h3>
+                <p className="text-green-100">All rounds in Phase 1 have been completed for this group.</p>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold mb-4">Final Scores</h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {currentGroup?.teams
+                    ?.map((team) => ({
+                      ...team,
+                      score: teamScores[team._id] || 0,
+                    }))
+                    ?.sort((a, b) => b.score - a.score)
+                    ?.map((team, index) => (
+                      <div
+                        key={team._id}
+                        className={`flex justify-between items-center p-4 rounded-lg border-2 ${
+                          index === 0
+                            ? "bg-yellow-500/20 border-yellow-300"
+                            : index === 1
+                            ? "bg-gray-500/20 border-gray-300"
+                            : index === 2
+                            ? "bg-orange-500/20 border-orange-300"
+                            : "bg-white/10 border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center">
+                          <span className="text-3xl mr-3">
+                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                          </span>
+                          <div>
+                            <h4 className="font-bold text-white">{team.name}</h4>
+                            <p className="text-sm text-green-100">{team.school.name}</p>
+                          </div>
+                        </div>
+                        <div className="text-3xl font-bold text-white">{team.score}</div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowGroupSummaryModal(false)}
+                  className="bg-white/10 text-white border-white/30 hover:bg-white/20"
+                >
+                  Stay with Current Group
+                </Button>
+                <Button
+                  onClick={handleStartNextGroup}
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  Start Phase 1 for Next Group
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tie-breaker Result Modal - Presentation overlay */}
         {isPresenting && showTieBreakerResultModal && (
@@ -2950,93 +3027,95 @@ export default function ManageCompetitionPage() {
           </Dialog>
         )}
 
-        {/* Group Summary Modal */}
-        <Dialog
-          open={showGroupSummaryModal}
-          onOpenChange={setShowGroupSummaryModal}
-        >
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center">
-                <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
-                Phase 1 Complete - {currentGroup?.name}
-              </DialogTitle>
-            </DialogHeader>
+        {/* Group Summary Modal - Admin */}
+        {!isPresenting && (
+          <Dialog
+            open={showGroupSummaryModal}
+            onOpenChange={setShowGroupSummaryModal}
+          >
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center">
+                  <Trophy className="w-6 h-6 mr-2 text-yellow-500" />
+                  Phase 1 Complete - {currentGroup?.name}
+                </DialogTitle>
+              </DialogHeader>
 
-            <div className="space-y-6">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <h3 className="font-semibold text-green-800 text-lg mb-2">
-                  🎉 Buzzer Round Completed!
-                </h3>
-                <p className="text-green-700">
-                  All rounds in Phase 1 have been completed for this group.
-                </p>
-              </div>
+              <div className="space-y-6">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-green-800 text-lg mb-2">
+                    🎉 Buzzer Round Completed!
+                  </h3>
+                  <p className="text-green-700">
+                    All rounds in Phase 1 have been completed for this group.
+                  </p>
+                </div>
 
-              <div>
-                <h3 className="font-semibold text-lg mb-4">Final Scores</h3>
-                <div className="grid grid-cols-1 gap-3">
-                  {currentGroup?.teams
-                    ?.map((team) => ({
-                      ...team,
-                      score: teamScores[team._id] || 0,
-                    }))
-                    ?.sort((a, b) => b.score - a.score)
-                    ?.map((team, index) => (
-                      <div
-                        key={team._id}
-                        className={`flex justify-between items-center p-4 rounded-lg border ${
-                          index === 0
-                            ? "bg-yellow-50 border-yellow-300"
-                            : index === 1
-                            ? "bg-gray-50 border-gray-300"
-                            : index === 2
-                            ? "bg-orange-50 border-orange-300"
-                            : "bg-white border-gray-200"
-                        }`}
-                      >
-                        <div className="flex items-center">
-                          <span className="text-2xl mr-3">
-                            {index === 0
-                              ? "🥇"
+                <div>
+                  <h3 className="font-semibold text-lg mb-4">Final Scores</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    {currentGroup?.teams
+                      ?.map((team) => ({
+                        ...team,
+                        score: teamScores[team._id] || 0,
+                      }))
+                      ?.sort((a, b) => b.score - a.score)
+                      ?.map((team, index) => (
+                        <div
+                          key={team._id}
+                          className={`flex justify-between items-center p-4 rounded-lg border ${
+                            index === 0
+                              ? "bg-yellow-50 border-yellow-300"
                               : index === 1
-                              ? "🥈"
+                              ? "bg-gray-50 border-gray-300"
                               : index === 2
-                              ? "🥉"
-                              : `${index + 1}.`}
-                          </span>
-                          <div>
-                            <h4 className="font-semibold">{team.name}</h4>
-                            <p className="text-sm text-gray-600">
-                              {team.school.name}
-                            </p>
+                              ? "bg-orange-50 border-orange-300"
+                              : "bg-white border-gray-200"
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <span className="text-2xl mr-3">
+                              {index === 0
+                                ? "🥇"
+                                : index === 1
+                                ? "🥈"
+                                : index === 2
+                                ? "🥉"
+                                : `${index + 1}.`}
+                            </span>
+                            <div>
+                              <h4 className="font-semibold">{team.name}</h4>
+                              <p className="text-sm text-gray-600">
+                                {team.school.name}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-2xl font-bold text-blue-600">
+                            {team.score}
                           </div>
                         </div>
-                        <div className="text-2xl font-bold text-blue-600">
-                          {team.score}
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <DialogFooter className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowGroupSummaryModal(false)}
-              >
-                Stay with Current Group
-              </Button>
-              <Button
-                onClick={handleStartNextGroup}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                Start Phase 1 for Next Group
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowGroupSummaryModal(false)}
+                >
+                  Stay with Current Group
+                </Button>
+                <Button
+                  onClick={handleStartNextGroup}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Start Phase 1 for Next Group
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Presentation Mode */}

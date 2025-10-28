@@ -40,6 +40,7 @@ export default function QuestionsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterPhase, setFilterPhase] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
@@ -86,8 +87,12 @@ export default function QuestionsPage() {
       filtered = filtered.filter(question => question.type === filterType);
     }
 
+    if (filterPhase !== 'all') {
+      filtered = filtered.filter(question => question.phase === filterPhase);
+    }
+
     setFilteredQuestions(filtered);
-  }, [questions, searchTerm, filterType]);
+  }, [questions, searchTerm, filterType, filterPhase]);
 
   const fetchQuestions = async () => {
     try {
@@ -878,7 +883,11 @@ export default function QuestionsPage() {
                 className="pl-10"
               />
             </div>
-            <Select value={filterType} onValueChange={setFilterType}>
+            <Select value={filterType} onValueChange={(value) => {
+              setFilterType(value);
+              // Reset phase filter when changing type
+              if (value === 'all') setFilterPhase('all');
+            }}>
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
@@ -892,6 +901,22 @@ export default function QuestionsPage() {
                 <SelectItem value="visual_rapid_fire">Visual Rapid Fire Only</SelectItem>
               </SelectContent>
             </Select>
+            
+            {/* Phase Filter - Show only when a type is selected */}
+            {filterType !== 'all' && (
+              <Select value={filterPhase} onValueChange={setFilterPhase}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filter by Phase" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Phases</SelectItem>
+                  <SelectItem value="league">League Only</SelectItem>
+                  <SelectItem value="semi_final">Semi Final Only</SelectItem>
+                  <SelectItem value="final">Final Only</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            
             {filterType !== 'all' && (
               <Button 
                 variant="destructive" 
@@ -900,6 +925,7 @@ export default function QuestionsPage() {
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete All {filterType.replace('_', ' ').toUpperCase()}
+                {filterPhase !== 'all' && ` (${filterPhase.replace('_', ' ')})`}
               </Button>
             )}
           </div>
@@ -927,6 +953,7 @@ export default function QuestionsPage() {
                   <TableHead>Media</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Phase</TableHead>
                   <TableHead>Difficulty</TableHead>
                   <TableHead>Points</TableHead>
                   <TableHead>Status</TableHead>
@@ -1003,6 +1030,12 @@ export default function QuestionsPage() {
                       >
                         {question.category}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {question.phase === 'league' ? 'League' : 
+                         question.phase === 'semi_final' ? 'Semi Final' : 'Final'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge className={getDifficultyColor(question.difficulty)}>
