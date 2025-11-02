@@ -5,7 +5,7 @@ import Question from '@/models/Question';
 import * as XLSX from 'xlsx';
 
 const DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
-const PHASES = new Set(['league', 'semi_final', 'final']);
+const PHASES = new Set(['league', 'semi_final', 'final', 'tie_breaker']);
 
 function toNumber(val: any, def = 0) {
   const n = Number(val);
@@ -20,7 +20,7 @@ function normalizeDifficulty(raw: any) {
 function normalizePhase(raw: any) {
   const v = String(raw || '').toLowerCase().trim();
   if (v === 'group') return 'league';
-  return PHASES.has(v) ? (v as 'league'|'semi_final'|'final') : 'league';
+  return PHASES.has(v) ? (v as 'league'|'semi_final'|'final'|'tie_breaker') : 'league';
 }
 
 function parseCorrectForMcq(val: any, options: string[]) {

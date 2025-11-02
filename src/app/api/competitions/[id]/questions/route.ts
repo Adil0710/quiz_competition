@@ -55,20 +55,48 @@ export async function GET(
       );
     }
 
-    // Find questions by type and phase that have NOT been used in this competition
-    // We prioritize per-competition non-reuse using usedInCompetitions, rather than global isUsed.
-    const available = await Question.aggregate([
-      {
-        $match: {
-          type,
-          phase,
+    // Find questions by type and phase that have NOT been used globally
+    // Priority: 1) Globally unused 2) Not used in this competition 3) Used but need more questions
+    // Special handling for tie_breaker: load buzzer questions from any phase
+    const baseQuery: any = { type };
+    
+    // For tie_breaker phase, we load questions from any phase (don't filter by phase)
+    // For regular phases, filter by the specified phase
+    if (phase !== 'tie_breaker') {
+      baseQuery.phase = phase;
+    }
+    
+    // Try to get globally unused questions first
+    let available = await Question.aggregate([
+      { 
+        $match: { 
+          ...baseQuery,
+          isUsed: false,
           usedInCompetitions: {
             $ne: new mongoose.Types.ObjectId(competitionId),
           },
-        },
+        } 
       },
       { $sample: { size: count } },
     ]);
+    
+    // If not enough globally unused, get questions not used in this competition
+    if (available.length < count) {
+      const remaining = count - available.length;
+      const additionalQuestions = await Question.aggregate([
+        { 
+          $match: { 
+            ...baseQuery,
+            usedInCompetitions: {
+              $ne: new mongoose.Types.ObjectId(competitionId),
+            },
+            _id: { $nin: available.map(q => q._id) } // Exclude already selected
+          } 
+        },
+        { $sample: { size: remaining } },
+      ]);
+      available = [...available, ...additionalQuestions];
+    }
 
     console.log(`Found ${available.length} questions for type: ${type}, phase: ${phase}`);
     
@@ -97,10 +125,11 @@ export async function GET(
       { $addToSet: { usedQuestions: { $each: questionIds } } }
     );
 
-    // Mark questions as used for this competition (do NOT set isUsed globally)
+    // Mark questions as used for this competition AND set global isUsed flag
     await Question.updateMany(
       { _id: { $in: questionIds } },
       {
+        $set: { isUsed: true },
         $addToSet: {
           usedInCompetitions: new mongoose.Types.ObjectId(competitionId),
         },

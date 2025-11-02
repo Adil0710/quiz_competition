@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Normalize phase
-    const phase = ['league', 'semi_final', 'final'].includes(phaseRaw) ? phaseRaw : 'league';
+    const phase = ['league', 'semi_final', 'final', 'tie_breaker'].includes(phaseRaw) ? phaseRaw : 'league';
 
     const questionData: any = {
       type,

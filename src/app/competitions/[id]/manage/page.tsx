@@ -64,7 +64,7 @@ interface Question {
   mediaType?: "image" | "audio" | "video";
   imageUrls?: string[]; // Array of images for visual rapid fire
   points: number;
-  phase: "league" | "semi_final" | "final";
+  phase: "league" | "semi_final" | "final" | "tie_breaker";
 }
 
 interface Competition {
@@ -174,7 +174,7 @@ export default function ManageCompetitionPage() {
       setRoundType("buzzer" as any);
       resetQuestion();
       setState("idle");
-      loadQuestions("buzzer", currentPhase); // will fetch 5 via getQuestionCount
+      loadQuestions("buzzer", "tie_breaker"); // Use tie_breaker phase to load buzzer questions from any phase
       toast({
         title: "Tie-breaker Started",
         description: `Detected ${tieGroups.length} tie group(s). Starting buzzer tie-breaker for ${tieGroups[0].length} team(s).`,
@@ -187,6 +187,16 @@ export default function ManageCompetitionPage() {
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [loading, setLoading] = useState(true);
   const [noQuestionsForType, setNoQuestionsForType] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [timerSettings, setTimerSettings] = useState({
+    mcqTimer: 10,
+    mediaTimer: 10,
+    buzzerTimer: 10,
+    rapidFireTimer: 60,
+    sequenceTimer: 20,
+    visualRapidFireTimer: 60
+  });
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const [mediaLoaded, setMediaLoaded] = useState(false);
@@ -196,6 +206,9 @@ export default function ManageCompetitionPage() {
   const [isCurrentMediaReady, setIsCurrentMediaReady] = useState(false);
   const [isCurrentMediaPlaying, setIsCurrentMediaPlaying] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
+  // Buzzer bonus round state
+  const [isBonusRound, setIsBonusRound] = useState(false);
+  const [bonusRoundExcludedTeam, setBonusRoundExcludedTeam] = useState<string | null>(null);
   const [showGroupSummaryModal, setShowGroupSummaryModal] = useState(false);
   const [showRoundSummaryModal, setShowRoundSummaryModal] = useState(false);
   const [showFinalWinnerModal, setShowFinalWinnerModal] = useState(false);
@@ -259,6 +272,8 @@ export default function ManageCompetitionPage() {
   const timerAudioRef = useRef<HTMLAudioElement | null>(null);
   const rightAnswerAudioRef = useRef<HTMLAudioElement | null>(null);
   const wrongAnswerAudioRef = useRef<HTMLAudioElement | null>(null);
+  const questionRevealAudioRef = useRef<HTMLAudioElement | null>(null);
+  const questionStartAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const { toast } = useToast();
   const params = useParams();
@@ -389,6 +404,49 @@ export default function ManageCompetitionPage() {
     return /[\u0591-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(s);
   };
 
+  // Helper function to get timer duration for round type
+  const getTimerDuration = (type: string): number => {
+    switch (type) {
+      case "mcq":
+        return timerSettings.mcqTimer;
+      case "media":
+        return timerSettings.mediaTimer;
+      case "buzzer":
+        return timerSettings.buzzerTimer;
+      case "rapid_fire":
+        return timerSettings.rapidFireTimer;
+      case "sequence":
+        return timerSettings.sequenceTimer;
+      case "visual_rapid_fire":
+        return timerSettings.visualRapidFireTimer;
+      default:
+        return 15; // Default fallback
+    }
+  };
+
+  // Load timer settings from global settings
+  useEffect(() => {
+    const loadTimerSettings = async () => {
+      try {
+        const response = await fetch('/api/global-settings');
+        const data = await response.json();
+        if (data.success && data.data) {
+          setTimerSettings({
+            mcqTimer: data.data.mcqTimer || 10,
+            mediaTimer: data.data.mediaTimer || 10,
+            buzzerTimer: data.data.buzzerTimer || 10,
+            rapidFireTimer: data.data.rapidFireTimer || 60,
+            sequenceTimer: data.data.sequenceTimer || 20,
+            visualRapidFireTimer: data.data.visualRapidFireTimer || 60
+          });
+        }
+      } catch (error) {
+        console.error('Error loading timer settings:', error);
+      }
+    };
+    loadTimerSettings();
+  }, []);
+
   // Initialize first round when competition loads
   useEffect(() => {
     if (competition && currentGroup && !currentQuestion) {
@@ -450,7 +508,7 @@ export default function ManageCompetitionPage() {
         if (currentLeft > 0) {
           startTimer();
         } else {
-          startTimer(15);
+          startTimer(getTimerDuration(roundType));
         }
         playTimerAudio();
       }
@@ -479,6 +537,21 @@ export default function ManageCompetitionPage() {
     }
   };
 
+  const playQuestionRevealAudio = () => {
+    if (questionRevealAudioRef.current) {
+      questionRevealAudioRef.current.currentTime = 0;
+      questionRevealAudioRef.current.play().catch(console.error);
+    }
+  };
+
+  const playQuestionStartAudio = () => {
+    if (questionStartAudioRef.current) {
+      questionStartAudioRef.current.currentTime = 0;
+      questionStartAudioRef.current.volume = 0.7; // Set to 70% volume
+      questionStartAudioRef.current.play().catch(console.error);
+    }
+  };
+
   const stopAllAudio = () => {
     if (timerAudioRef.current) {
       timerAudioRef.current.pause();
@@ -491,6 +564,14 @@ export default function ManageCompetitionPage() {
     if (wrongAnswerAudioRef.current) {
       wrongAnswerAudioRef.current.pause();
       wrongAnswerAudioRef.current.currentTime = 0;
+    }
+    if (questionRevealAudioRef.current) {
+      questionRevealAudioRef.current.pause();
+      questionRevealAudioRef.current.currentTime = 0;
+    }
+    if (questionStartAudioRef.current) {
+      questionStartAudioRef.current.pause();
+      questionStartAudioRef.current.currentTime = 0;
     }
   };
 
@@ -879,11 +960,12 @@ export default function ManageCompetitionPage() {
     } else if (type === "buzzer") {
       return 5; // 5 questions per group (fixed)
     } else if (type === "rapid_fire") {
-      return 3; // Only 3 questions per group (one per team)
+      return 0; // Rapid fire is oral - no questions from DB
     } else if (type === "sequence") {
       return teamCount * 2; // 2 questions per team
     } else if (type === "visual_rapid_fire") {
-      return 3; // 3 questions total, each with 20 images
+      // Visual rapid fire: 20 questions per team (each question = 1 image shown for 3 seconds)
+      return teamCount * 20; // 60 questions total for 3 teams in final
     }
 
     return 10; // Default fallback
@@ -975,18 +1057,25 @@ export default function ManageCompetitionPage() {
     }
   };
 
-  const loadQuestions = async (type: string, phase: string = "league") => {
-    console.log(
-      "Loading questions for type:",
-      type,
-      "phase:",
-      phase,
-      "Competition ID:",
-      competitionId
-    );
+  const loadQuestions = async (type: string, phase: string) => {
+    console.log(`Loading questions for type: ${type}, phase: ${phase}`);
 
     if (!competition || !currentGroup) {
       console.log("Competition or group not loaded yet");
+      return;
+    }
+
+    // Special handling for rapid_fire - it's oral, no questions loaded from DB
+    if (type === "rapid_fire") {
+      console.log("Rapid Fire round - oral questions, no DB loading");
+      setQuestions([]);
+      setCurrentQuestion(null);
+      setNoQuestionsForType(false);
+      setState("options_shown"); // Go directly to timer display
+      toast({
+        title: "Rapid Fire Round",
+        description: "1 minute timer ready. Questions asked orally by anchor.",
+      });
       return;
     }
 
@@ -1068,10 +1157,13 @@ export default function ManageCompetitionPage() {
     );
 
     if (currentState === "idle") {
+      // Play question reveal sound for all rounds in all phases
+      playQuestionRevealAudio();
+      
       if (roundType === "rapid_fire") {
         // For rapid fire, skip question display and go directly to timer
         setState("options_shown");
-        startTimer(60); // Start 1 minute timer immediately
+        startTimer(getTimerDuration("rapid_fire")); // Start timer immediately
       } else if (roundType === "buzzer") {
         setState("question_shown"); // For buzzer, show question AND team selection
       } else {
@@ -1095,8 +1187,13 @@ export default function ManageCompetitionPage() {
     // Always set to options_shown regardless of current state
     setState("options_shown");
 
+    // Play question start sound for all rounds EXCEPT media round
+    if (roundType !== "media") {
+      playQuestionStartAudio();
+    }
+
     if (roundType === "mcq") {
-      startTimer(15); // 15 second timer for MCQ
+      startTimer(getTimerDuration("mcq")); // MCQ timer
       playTimerAudio(); // Play timer sound
       console.log(
         "MCQ: Showing options with 15s timer, state set to options_shown"
@@ -1110,12 +1207,12 @@ export default function ManageCompetitionPage() {
       // For buzzer, only show options; timer will start when a team is selected
       console.log("Buzzer: Showing options for team selection (timer starts on team selection)");
     } else if (roundType === "rapid_fire") {
-      startTimer(60); // 1 minute timer for rapid fire
+      startTimer(getTimerDuration("rapid_fire")); // Rapid fire timer
       playTimerAudio(); // Play timer sound
       console.log("Rapid Fire: Starting 1 minute timer");
     } else if (roundType === "sequence") {
-      // Start 1 minute timer for sequence round for consistency
-      startTimer(60);
+      // Start timer for sequence round
+      startTimer(getTimerDuration("sequence"));
       playTimerAudio();
       console.log("Sequence: Showing options for sequence input with 60s timer");
     } else if (roundType === "visual_rapid_fire") {
@@ -1211,6 +1308,7 @@ export default function ManageCompetitionPage() {
   };
 
   const revealFinalWinner = () => {
+    console.log("Revealing final winner");
     if (!winnerRevealed) {
       setWinnerRevealed(true);
       fireFireworks(5000);
@@ -1323,8 +1421,8 @@ export default function ManageCompetitionPage() {
         console.log("VRF: Image ready, resuming timer");
         startTimer();
       } else {
-        console.log("VRF: Image ready, starting 60s timer");
-        startTimer(60);
+        console.log("VRF: Image ready, starting timer");
+        startTimer(getTimerDuration("visual_rapid_fire"));
       }
       playTimerAudio();
     }
@@ -1353,28 +1451,66 @@ export default function ManageCompetitionPage() {
     prevPhaseRef.current = currentPhase;
   }, [currentPhase]);
 
+  // Ensure roundType is always synchronized with currentRoundIndex
+  useEffect(() => {
+    if (!tieBreakerMode && currentPhase) {
+      const rounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
+      if (rounds && rounds[currentRoundIndex]) {
+        const expectedRoundType = rounds[currentRoundIndex].type;
+        if (roundType !== expectedRoundType) {
+          console.log(`Syncing roundType: ${roundType} -> ${expectedRoundType}`);
+          setRoundType(expectedRoundType as any);
+        }
+      }
+    }
+  }, [currentRoundIndex, currentPhase, tieBreakerMode]);
+
   const handleNextQuestion = () => {
     // Stop all audio when moving to next question
     stopAllAudio();
+    
+    // Clear selected team
+    setSelectedTeam(null);
+    
+    // Reset bonus round state
+    setIsBonusRound(false);
+    setBonusRoundExcludedTeam(null);
     
     // Reset image index for visual rapid fire
     if (roundType === "visual_rapid_fire") {
       setCurrentImageIndex(0);
     }
     
-    const nextIndex = currentQuestionIndex + 1;
-
-    // Special handling for rapid fire - after 3 questions, move to next group
-    if (roundType === "rapid_fire" && nextIndex >= 3) {
+    // Special handling for rapid fire - it's oral, so just complete the round
+    if (roundType === "rapid_fire") {
       toast({
         title: "Rapid Fire Complete",
-        description: "3 questions completed! Moving to next group.",
+        description: "Round completed! Moving to next round.",
       });
 
-      // Show group summary modal to move to next group
-      setShowGroupSummaryModal(true);
+      // Move to next round in the phase
+      const currentPhaseRounds = phaseStructure[currentPhase as keyof typeof phaseStructure];
+      const currentRoundIndexInPhase = currentPhaseRounds.findIndex(
+        (r) => r.type === roundType
+      );
+      const nextRound = currentPhaseRounds[currentRoundIndexInPhase + 1];
+
+      if (nextRound) {
+        // Show round summary modal before advancing
+        setCompletedRoundInfo(currentPhaseRounds[currentRoundIndexInPhase]);
+        setPendingNextRoundInfo(nextRound);
+        setPendingNextRoundIndex(currentRoundIndexInPhase + 1);
+        setShowRoundSummaryModal(true);
+        setState("idle");
+      } else {
+        // All rounds completed for this phase
+        setShowGroupSummaryModal(true);
+        setState("idle");
+      }
       return;
     }
+
+    const nextIndex = currentQuestionIndex + 1;
 
     // Check if we've reached the end of questions for this round type
     if (nextIndex >= questions.length) {
@@ -1388,7 +1524,7 @@ export default function ManageCompetitionPage() {
           setSelectedTeam(null);
           setState("idle");
           setRoundType("buzzer" as any);
-          loadQuestions("buzzer", currentPhase);
+          loadQuestions("buzzer", "tie_breaker");
         } else {
           // All tie groups processed — compute winners/losers and show tie-breaker result modal
           const allWinners: string[] = [];
@@ -1472,6 +1608,13 @@ export default function ManageCompetitionPage() {
   const handlePrevQuestion = () => {
     // Stop all audio when moving to previous question
     stopAllAudio();
+    
+    // Clear selected team
+    setSelectedTeam(null);
+    
+    // Reset bonus round state
+    setIsBonusRound(false);
+    setBonusRoundExcludedTeam(null);
 
     // Reset image index for visual rapid fire
     if (roundType === "visual_rapid_fire") {
@@ -1509,12 +1652,28 @@ export default function ManageCompetitionPage() {
       playRightAnswerAudio();
       // Celebrate only on correct answer
       fireSideConfetti();
+      
+      // Auto-award points if a team is selected (for MCQ and Sequence rounds)
+      if (selectedTeam && (roundType === "mcq" || roundType === "sequence")) {
+        console.log("Auto-awarding points to selected team:", selectedTeam);
+        setTimeout(() => {
+          handleAwardPoints(selectedTeam, getCurrentRoundPoints());
+        }, 500); // Small delay for visual feedback
+      }
     } else {
       playWrongAnswerAudio();
       // Auto-show correct answer for wrong selection
       setTimeout(() => {
         toggleCorrectAnswer();
       }, 1000);
+      
+      // Apply negative marking if enabled and team is selected
+      if (selectedTeam && (roundType === "mcq" || roundType === "sequence") && getCurrentRoundNegativeMarking()) {
+        console.log("Auto-applying negative marking to selected team:", selectedTeam);
+        setTimeout(() => {
+          handleAwardPoints(selectedTeam, -getCurrentRoundPoints());
+        }, 500);
+      }
     }
   };
 
@@ -1645,15 +1804,53 @@ export default function ManageCompetitionPage() {
       if (isPresenting) {
         setTimeout(() => {
           presentRef.current?.focus();
-        }, 0);
+        }, 100);
       }
-    } else {
-      setShowRoundSummaryModal(false);
-      if (isPresenting) {
-        setTimeout(() => {
-          presentRef.current?.focus();
-        }, 0);
+    }
+  };
+
+  const handleResetQuestions = async () => {
+    try {
+      setResetting(true);
+      const response = await fetch('/api/questions/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          type: roundType,
+          phase: tieBreakerMode ? 'tie_breaker' : currentPhase,
+          global: false // Standard reset (only isUsed flag)
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Questions Reset",
+          description: `${data.resetCount} questions have been reset and are now available again.`,
+        });
+        
+        // Close dialog and reload questions
+        setShowResetDialog(false);
+        setNoQuestionsForType(false);
+        
+        // Reload questions for current round
+        if (roundType && currentPhase) {
+          const phase = tieBreakerMode ? 'tie_breaker' : currentPhase;
+          loadQuestions(roundType, phase);
+        }
+      } else {
+        throw new Error(data.error || 'Failed to reset questions');
       }
+    } catch (error) {
+      console.error('Error resetting questions:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to reset questions",
+        variant: "destructive",
+      });
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -1700,11 +1897,31 @@ export default function ManageCompetitionPage() {
       // All steps revealed, close modal and show answer
       toggleSequenceModal();
       setState("answer_shown");
-      // If entire sequence matches, celebrate
+      
+      // If entire sequence matches, celebrate and auto-award points
       const allCorrect =
         sequenceComparison.correct.length === sequenceComparison.selected.length &&
         sequenceComparison.correct.every((v: number, idx: number) => v === sequenceComparison.selected[idx]);
-      // No confetti here; only dialogs and option clicks should trigger confetti
+      
+      if (allCorrect) {
+        fireSideConfetti();
+        
+        // Auto-award points if a team is selected
+        if (selectedTeam && roundType === "sequence") {
+          console.log("Auto-awarding points to selected team for correct sequence:", selectedTeam);
+          setTimeout(() => {
+            handleAwardPoints(selectedTeam, getCurrentRoundPoints());
+          }, 500);
+        }
+      } else {
+        // Apply negative marking if enabled and team is selected
+        if (selectedTeam && roundType === "sequence" && getCurrentRoundNegativeMarking()) {
+          console.log("Auto-applying negative marking to selected team for wrong sequence:", selectedTeam);
+          setTimeout(() => {
+            handleAwardPoints(selectedTeam, -getCurrentRoundPoints());
+          }, 500);
+        }
+      }
     }
   };
 
@@ -1729,15 +1946,49 @@ export default function ManageCompetitionPage() {
       toggleCorrectAnswer(); // Show correct answer feedback
       // Confetti for correct buzzer answer
       fireSideConfetti();
+      playRightAnswerAudio();
+    } else {
+      playWrongAnswerAudio();
+      // Show correct answer after wrong selection
+      setTimeout(() => {
+        toggleCorrectAnswer();
+      }, 1000);
     }
 
     const buzzerPoints = getCurrentRoundPoints();
+    
     if (selectedTeam && isCorrect) {
       // Award points for correct answer via API
       await handleAwardPoints(selectedTeam, buzzerPoints);
+      
+      // If correct, reset bonus round state (question is done)
+      setIsBonusRound(false);
+      setBonusRoundExcludedTeam(null);
     } else if (selectedTeam && !isCorrect) {
-      // Deduct points for wrong answer in buzzer round via API
-      await handleAwardPoints(selectedTeam, -buzzerPoints);
+      // Wrong answer logic
+      if (!isBonusRound) {
+        // FIRST ATTEMPT - Deduct points and enable bonus round
+        console.log("First attempt failed - enabling bonus round");
+        await handleAwardPoints(selectedTeam, -buzzerPoints);
+        
+        // Enable bonus round mode
+        setIsBonusRound(true);
+        setBonusRoundExcludedTeam(selectedTeam);
+        
+        // Show notification about bonus round
+        toast({
+          title: "Bonus Round Available!",
+          description: "Question can be answered by other teams. Press Q to hide/show question, select another team.",
+         
+        });
+      } else {
+        // BONUS ROUND - NO negative marking, just don't award points
+        console.log("Bonus round attempt failed - no negative marking");
+        toast({
+          title: "Incorrect",
+          description: "No points deducted in bonus round.",
+        });
+      }
     }
   };
 
@@ -2001,12 +2252,16 @@ export default function ManageCompetitionPage() {
             {noQuestionsForType ? (
               <Card>
                 <CardContent className="p-6 text-center">
-                  <h3 className="text-lg font-semibold mb-2">
+                  <h3 className="text-lg font-semibold mb-4">
                     No Questions Available
                   </h3>
-                  <p className="text-gray-600">
-                    No questions found for the selected round type.
+                  <p className="text-gray-600 mb-6">
+                    No questions found for the selected round type and phase.
+                    All questions may have been used.
                   </p>
+                  <Button onClick={() => setShowResetDialog(true)} variant="outline">
+                    Reset Questions
+                  </Button>
                 </CardContent>
               </Card>
             ) : currentQuestion ? (
@@ -2037,130 +2292,6 @@ export default function ManageCompetitionPage() {
                         </h3>
                       )}
 
-        {/* Group Summary Modal - Presentation overlay */}
-        {isPresenting && showGroupSummaryModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[80] p-6">
-            <div className="bg-gradient-to-br from-green-700 to-emerald-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
-              <div className="flex items-center justify-center mb-6">
-                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
-                <h2 className="text-3xl font-bold">Phase 1 Complete - {currentGroup?.name}</h2>
-              </div>
-              <div className="bg-white/10 border border-white/20 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-lg mb-2">🎉 Buzzer Round Completed!</h3>
-                <p className="text-green-100">All rounds in Phase 1 have been completed for this group.</p>
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-4">Final Scores</h3>
-                <div className="grid grid-cols-1 gap-3">
-                  {currentGroup?.teams
-                    ?.map((team) => ({
-                      ...team,
-                      score: teamScores[team._id] || 0,
-                    }))
-                    ?.sort((a, b) => b.score - a.score)
-                    ?.map((team, index) => (
-                      <div
-                        key={team._id}
-                        className={`flex justify-between items-center p-4 rounded-lg border-2 ${
-                          index === 0
-                            ? "bg-yellow-500/20 border-yellow-300"
-                            : index === 1
-                            ? "bg-gray-500/20 border-gray-300"
-                            : index === 2
-                            ? "bg-orange-500/20 border-orange-300"
-                            : "bg-white/10 border-white/20"
-                        }`}
-                      >
-                        <div className="flex items-center">
-                          <span className="text-3xl mr-3">
-                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
-                          </span>
-                          <div>
-                            <h4 className="font-bold text-white">{team.name}</h4>
-                            <p className="text-sm text-green-100">{team.school.name}</p>
-                          </div>
-                        </div>
-                        <div className="text-3xl font-bold text-white">{team.score}</div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-              <div className="mt-8 flex justify-end gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowGroupSummaryModal(false)}
-                  className="bg-white/10 text-white border-white/30 hover:bg-white/20"
-                >
-                  Stay with Current Group
-                </Button>
-                <Button
-                  onClick={handleStartNextGroup}
-                  className="bg-green-500 hover:bg-green-600 text-white"
-                >
-                  Start Phase 1 for Next Group
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tie-breaker Result Modal - Presentation overlay */}
-        {isPresenting && showTieBreakerResultModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[85] p-6">
-            <div className="bg-gradient-to-br from-indigo-700 to-purple-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
-              <div className="flex items-center justify-center mb-6">
-                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
-                <h2 className="text-3xl font-bold">Tie-breaker Results</h2>
-              </div>
-              <p className="text-center text-lg text-indigo-100 mb-6">
-                {currentPhase === "semi_final" ? "Proceeding to Semi-Final" : currentPhase === "final" ? "Proceeding to Final" : "Next Phase"}
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-xl font-semibold text-green-300 mb-2">Proceeding Teams</h4>
-                  <div className="space-y-2">
-                    {tieBreakerWinners.length === 0 && (
-                      <div className="text-sm text-indigo-200">No winners detected.</div>
-                    )}
-                    {tieBreakerWinners.map((id) => {
-                      const t = getTeamById(id);
-                      return (
-                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-green-300/40">
-                          <div className="font-bold text-white">{t?.name || id}</div>
-                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="text-xl font-semibold text-red-300 mb-2">Eliminated Teams</h4>
-                  <div className="space-y-2">
-                    {tieBreakerLosers.length === 0 && (
-                      <div className="text-sm text-indigo-200">No eliminated teams.</div>
-                    )}
-                    {tieBreakerLosers.map((id) => {
-                      const t = getTeamById(id);
-                      return (
-                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-red-300/40">
-                          <div className="font-bold text-white">{t?.name || id}</div>
-                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-              <div className="mt-8 flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setShowTieBreakerResultModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">Close</Button>
-                <Button onClick={handleContinueAfterTie} className="bg-blue-500 hover:bg-blue-600 text-white">
-                  {currentPhase === "semi_final" ? "Proceed to Semi-Final Rounds" : currentPhase === "final" ? "Proceed to Final Rounds" : "Continue"}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
                       {/* Media Display - Only show when options are shown for media rounds */}
                       {currentQuestion.mediaUrl &&
                         currentState === "options_shown" && (
@@ -2174,7 +2305,7 @@ export default function ManageCompetitionPage() {
                                   onLoad={() => {
                                     setIsCurrentMediaReady(true);
                                     if (!isPresenting && !isTimerActive && currentState === "options_shown") {
-                                      startTimer(15);
+                                      startTimer(getTimerDuration("media"));
                                       playTimerAudio();
                                     }
                                   }}
@@ -2215,7 +2346,7 @@ export default function ManageCompetitionPage() {
                                       if (timeLeft > 0) {
                                         startTimer();
                                       } else {
-                                        startTimer(15);
+                                        startTimer(getTimerDuration("media"));
                                       }
                                       playTimerAudio();
                                     }
@@ -2246,7 +2377,7 @@ export default function ManageCompetitionPage() {
                                       if (timeLeft > 0) {
                                         startTimer();
                                       } else {
-                                        startTimer(15);
+                                        startTimer(getTimerDuration("media"));
                                       }
                                       playTimerAudio();
                                     }
@@ -2743,13 +2874,20 @@ export default function ManageCompetitionPage() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 {currentGroup.teams.map((team) => (
-                  <Card key={team._id} className="p-4">
-                    <h4 className="font-semibold">{team.name}</h4>
-                    <p className="text-sm text-gray-600">{team.school.name}</p>
-                    <p className="text-lg font-bold text-blue-600">
-                      Total Score: {teamScores[team._id] || 0}
-                    </p>
-                    <div className="flex gap-2 mt-3">
+                  <Card key={team._id} className="p-4 border-2 hover:border-blue-400 transition-colors">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <h4 className="font-bold text-lg">{team.name}</h4>
+                        <p className="text-sm text-gray-600">{team.school.name}</p>
+                      </div>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                      <p className="text-sm text-gray-600">Total Score</p>
+                      <p className="text-3xl font-bold text-blue-600">
+                        {teamScores[team._id] || 0} <span className="text-lg text-gray-500">pts</span>
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
                       <Button
                         size="sm"
                         className={`flex-1 ${
@@ -2774,7 +2912,7 @@ export default function ManageCompetitionPage() {
                             !isOptionCorrect)
                         }
                       >
-                        +{getCurrentRoundPoints()}
+                        +{getCurrentRoundPoints()} pts
                         {roundType === "mcq" &&
                           selectedOption !== null &&
                           (isOptionCorrect ? " ✓" : " ✗")}
@@ -2789,9 +2927,8 @@ export default function ManageCompetitionPage() {
                               -getCurrentRoundPoints()
                             )
                           }
-                          disabled={!currentQuestion}
                         >
-                          -{getCurrentRoundPoints()}
+                          -{getCurrentRoundPoints()} pts
                         </Button>
                       )}
                     </div>
@@ -3116,6 +3253,45 @@ export default function ManageCompetitionPage() {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Reset Questions Dialog */}
+        <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reset Questions</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                This will reset the usage status of <strong>{roundType?.toUpperCase()}</strong> questions for the current phase, making them available again.
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-800">
+                  <strong>Note:</strong> This only resets the global "used" flag. Questions will still be tracked per-competition to avoid repeats within the same competition.
+                </p>
+              </div>
+              <div className="text-sm space-y-1">
+                <p><strong>Round Type:</strong> {roundType?.toUpperCase()}</p>
+                <p><strong>Phase:</strong> {tieBreakerMode ? 'Tie-breaker' : currentPhase === 'league' ? 'League' : currentPhase === 'semi_final' ? 'Semi-Final' : 'Final'}</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowResetDialog(false)}
+                disabled={resetting}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleResetQuestions}
+                disabled={resetting}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {resetting ? 'Resetting...' : 'Reset Questions'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Presentation Mode */}
@@ -3152,6 +3328,11 @@ export default function ManageCompetitionPage() {
               }
               break;
             case "a":
+              // Final winner reveal gate
+              if (showFinalWinnerModal && !winnerRevealed) {
+                revealFinalWinner();
+                break;
+              }
               if (currentQuestion) {
                 if (roundType === "sequence" && showSequenceModal) {
                   handleSequenceReveal();
@@ -3245,7 +3426,7 @@ export default function ManageCompetitionPage() {
                           <p className="text-sm text-indigo-200">{team.school.name}</p>
                         </div>
                       </div>
-                      <div className="text-3xl font-extrabold text-yellow-300">{team.score}</div>
+                      <div className="text-3xl font-extrabold text-yellow-300">{team.score} pts</div>
                     </div>
                   ))}
               </div>
@@ -3260,32 +3441,242 @@ export default function ManageCompetitionPage() {
             </div>
           </div>
         )}
+
+        {/* Group Summary Modal - Presentation overlay */}
+        {isPresenting && showGroupSummaryModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[80] p-6">
+            <div className="bg-gradient-to-br from-green-700 to-emerald-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
+                <h2 className="text-3xl font-bold">Phase 1 Complete - {currentGroup?.name}</h2>
+              </div>
+              <div className="bg-white/10 border border-white/20 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-lg mb-2">🎉 Buzzer Round Completed!</h3>
+                <p className="text-green-100">All rounds in Phase 1 have been completed for this group.</p>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold mb-4">Final Scores</h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {currentGroup?.teams
+                    ?.map((team) => ({
+                      ...team,
+                      score: teamScores[team._id] || 0,
+                    }))
+                    ?.sort((a, b) => b.score - a.score)
+                    ?.map((team, index) => (
+                      <div
+                        key={team._id}
+                        className={`flex justify-between items-center p-4 rounded-lg border-2 ${
+                          index === 0
+                            ? "bg-yellow-500/20 border-yellow-300"
+                            : index === 1
+                            ? "bg-gray-500/20 border-gray-300"
+                            : index === 2
+                            ? "bg-orange-500/20 border-orange-300"
+                            : "bg-white/10 border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center">
+                          <span className="text-3xl mr-3">
+                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                          </span>
+                          <div>
+                            <h4 className="font-bold text-white">{team.name}</h4>
+                            <p className="text-sm text-green-100">{team.school.name}</p>
+                          </div>
+                        </div>
+                        <div className="text-3xl font-bold text-white">{team.score} pts</div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowGroupSummaryModal(false)}
+                  className="bg-white/10 text-white border-white/30 hover:bg-white/20"
+                >
+                  Stay with Current Group
+                </Button>
+                <Button
+                  onClick={handleStartNextGroup}
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                >
+                  Start Phase 1 for Next Group
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tie-breaker Result Modal - Presentation overlay */}
+        {isPresenting && showTieBreakerResultModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[85] p-6">
+            <div className="bg-gradient-to-br from-indigo-700 to-purple-700 rounded-2xl p-8 w-full max-w-4xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-6">
+                <Trophy className="w-10 h-10 mr-3 text-yellow-300" />
+                <h2 className="text-3xl font-bold">Tie-breaker Results</h2>
+              </div>
+              <p className="text-center text-lg text-indigo-100 mb-6">
+                {currentPhase === "semi_final" ? "Proceeding to Semi-Final" : currentPhase === "final" ? "Proceeding to Final" : "Next Phase"}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-xl font-semibold text-green-300 mb-2">Proceeding Teams</h4>
+                  <div className="space-y-2">
+                    {tieBreakerWinners.length === 0 && (
+                      <div className="text-sm text-indigo-200">No winners detected.</div>
+                    )}
+                    {tieBreakerWinners.map((id) => {
+                      const t = getTeamById(id);
+                      return (
+                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-green-300/40">
+                          <div className="font-bold text-white">{t?.name || id}</div>
+                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-xl font-semibold text-red-300 mb-2">Eliminated Teams</h4>
+                  <div className="space-y-2">
+                    {tieBreakerLosers.length === 0 && (
+                      <div className="text-sm text-indigo-200">No eliminated teams.</div>
+                    )}
+                    {tieBreakerLosers.map((id) => {
+                      const t = getTeamById(id);
+                      return (
+                        <div key={id} className="p-3 rounded-lg border-2 bg-white/10 border-red-300/40">
+                          <div className="font-bold text-white">{t?.name || id}</div>
+                          <div className="text-xs text-indigo-200">{t?.school?.name || ""}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowTieBreakerResultModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">
+                  Close
+                </Button>
+                <Button className="bg-blue-500 hover:bg-blue-600 text-white" onClick={handleContinueAfterTie}>
+                  {currentPhase === "semi_final" ? "Proceed to Semi-Final Rounds" : currentPhase === "final" ? "Proceed to Final Rounds" : "Continue"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Final Winner Modal - Presentation overlay */}
         {isPresenting && showFinalWinnerModal && (
           <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[90] p-6">
-            <div className="bg-gradient-to-br from-purple-700 to-pink-700 rounded-2xl p-10 w-full max-w-4xl text-white shadow-2xl text-center">
-              <div className="flex items-center justify-center mb-6">
-                <Trophy className="w-12 h-12 mr-3 text-yellow-300" />
-                <h2 className="text-4xl font-extrabold">Final Complete</h2>
+            <div className="bg-gradient-to-br from-purple-700 to-pink-700 rounded-2xl p-10 w-full max-w-5xl text-white shadow-2xl">
+              <div className="flex items-center justify-center mb-8">
+                <Trophy className="w-16 h-16 mr-3 text-yellow-300" />
+                <h2 className="text-5xl font-extrabold">🏆 Final Complete 🏆</h2>
               </div>
               {!winnerRevealed ? (
                 <>
-                  <p className="text-2xl text-indigo-100 mb-4">Press 'A' to reveal the Winner</p>
-                  <p className="text-indigo-200">Keep the suspense! 🎉</p>
+                  <p className="text-3xl text-indigo-100 mb-4 text-center">Press 'A' to reveal the Champion</p>
+                  <p className="text-2xl text-indigo-200 text-center">Keep the suspense! 🎉</p>
+                  
+                  {/* Show final standings without revealing winner */}
+                  <div className="mt-10">
+                    <h3 className="text-2xl font-semibold mb-4 text-center">Final Standings</h3>
+                    <div className="grid grid-cols-1 gap-3">
+                      {currentGroup?.teams
+                        ?.map((team) => ({
+                          ...team,
+                          score: teamScores[team._id] ?? team.totalScore ?? 0,
+                        }))
+                        ?.sort((a, b) => b.score - a.score)
+                        ?.map((team, index) => (
+                          <div
+                            key={team._id}
+                            className={`flex justify-between items-center p-5 rounded-xl border-2 backdrop-blur-sm ${
+                              index === 0
+                                ? "bg-yellow-500/30 border-yellow-300"
+                                : index === 1
+                                ? "bg-gray-500/30 border-gray-300"
+                                : index === 2
+                                ? "bg-orange-500/30 border-orange-300"
+                                : "bg-white/10 border-white/20"
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <span className="text-4xl mr-4">
+                                {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                              </span>
+                              <div>
+                                <h4 className="text-3xl font-bold text-white">{team.name}</h4>
+                                <p className="text-lg text-indigo-200">{team.school.name}</p>
+                              </div>
+                            </div>
+                            <div className="text-5xl font-extrabold text-yellow-300">{team.score} pts</div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
                 </>
               ) : (
-                <>
-                  <p className="text-xl text-indigo-100 mb-2">Champion</p>
-                  <h3 className="text-6xl font-extrabold text-yellow-300 mb-2">
-                    {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.name || "Winner"}
-                  </h3>
-                  <p className="text-lg text-indigo-100">
-                    {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.school?.name || ""}
-                  </p>
-                </>
+                <div className="text-center">
+                  <div className="mb-8">
+                    <p className="text-2xl text-indigo-100 mb-3">🎊 Champion 🎊</p>
+                    <h3 className="text-7xl font-extrabold text-yellow-300 mb-3 animate-pulse">
+                      {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.name || "Winner"}
+                    </h3>
+                    <p className="text-2xl text-indigo-100">
+                      {currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.school?.name || ""}
+                    </p>
+                    <div className="mt-4">
+                      <span className="inline-block bg-yellow-400 text-purple-900 text-4xl font-bold px-8 py-4 rounded-2xl">
+                        {teamScores[finalWinnerTeamId || ""] ?? currentGroup?.teams.find((t) => t._id === finalWinnerTeamId)?.totalScore ?? 0} points
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Show all standings */}
+                  <div className="mt-10">
+                    <h3 className="text-3xl font-semibold mb-6">Final Standings</h3>
+                    <div className="grid grid-cols-1 gap-4">
+                      {currentGroup?.teams
+                        ?.map((team) => ({
+                          ...team,
+                          score: teamScores[team._id] ?? team.totalScore ?? 0,
+                        }))
+                        ?.sort((a, b) => b.score - a.score)
+                        ?.map((team, index) => (
+                          <div
+                            key={team._id}
+                            className={`flex justify-between items-center p-5 rounded-xl border-2 backdrop-blur-sm ${
+                              index === 0
+                                ? "bg-yellow-500/30 border-yellow-300 scale-105"
+                                : index === 1
+                                ? "bg-gray-500/30 border-gray-300"
+                                : index === 2
+                                ? "bg-orange-500/30 border-orange-300"
+                                : "bg-white/10 border-white/20"
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <span className="text-4xl mr-4">
+                                {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`}
+                              </span>
+                              <div>
+                                <h4 className="text-3xl font-bold text-white">{team.name}</h4>
+                                <p className="text-lg text-indigo-200">{team.school.name}</p>
+                              </div>
+                            </div>
+                            <div className="text-5xl font-extrabold text-yellow-300">{team.score} pts</div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
               )}
               <div className="mt-10 flex justify-center gap-3">
-                <Button variant="outline" onClick={() => setShowFinalWinnerModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20">
+                <Button variant="outline" onClick={() => setShowFinalWinnerModal(false)} className="bg-white/10 text-white border-white/30 hover:bg-white/20 text-lg px-6 py-3">
                   Close
                 </Button>
               </div>
@@ -3330,6 +3721,16 @@ export default function ManageCompetitionPage() {
                 )}
                 {getCurrentRoundNegativeMarking() && (
                   <Badge className="px-3 py-1 bg-orange-500 hover:bg-orange-600">Negative Marking</Badge>
+                )}
+                {isBonusRound && roundType === "buzzer" && (
+                  <Badge className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-black font-bold animate-pulse">
+                    🎁 BONUS ROUND
+                  </Badge>
+                )}
+                {selectedTeam && (roundType === "mcq" || roundType === "sequence") && (
+                  <Badge className="px-3 py-1 bg-green-500 hover:bg-green-600 animate-pulse">
+                    ✓ {currentGroup?.teams.find(t => t._id === selectedTeam)?.name}
+                  </Badge>
                 )}
                 <span className="text-gray-300">|</span>
                 <span className="text-white">{currentGroup?.name}</span>
@@ -3402,16 +3803,55 @@ export default function ManageCompetitionPage() {
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-12">
 
+              {/* Show prominent round name ALWAYS when there's a question or in rapid fire */}
+              {(currentQuestion || (roundType === "rapid_fire" && currentState === "options_shown")) && (
+                <div className="text-center">
+                  <motion.h1
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-6xl md:text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 mb-4"
+                    style={{ textShadow: '0 4px 12px rgba(0, 0, 0, 0.5)' }}
+                  >
+                    {getCurrentRound().name}
+                  </motion.h1>
+                </div>
+              )}
+
               {/* Show content based on round type and state */}
               {roundType === "rapid_fire" &&
               currentState === "options_shown" ? (
                 <div className="text-center space-y-8">
-                  <h2 className="text-8xl font-bold text-orange-400">
-                    Rapid Fire Round
+                  <h2 className="text-7xl font-bold text-orange-400">
+                    1 Minute Timer
                   </h2>
                   <p className="text-3xl text-gray-300">
                     Questions asked orally by anchor
                   </p>
+                  <div className="flex justify-center mt-12">
+                    <div
+                      className="inline-flex items-center gap-4 px-8 py-6 rounded-3xl bg-black/40 border-4 border-orange-400 shadow-2xl"
+                      onClick={handleTimerToggle}
+                    >
+                      <motion.div
+                        animate={
+                          isTimerActive
+                            ? { scale: [1, 1.2, 1], rotate: [0, 10, -10, 0] }
+                            : { scale: 1, rotate: 0 }
+                        }
+                        transition={{ duration: 0.6, repeat: isTimerActive ? Infinity : 0 }}
+                      >
+                        <Timer className={`w-20 h-20 ${isTimerActive ? 'text-green-400' : 'text-orange-400'}`} />
+                      </motion.div>
+                      <motion.div
+                        key={timeLeft}
+                        initial={{ scale: 0.9 }}
+                        animate={{ scale: [0.9, 1.1, 1] }}
+                        className="font-mono text-9xl font-extrabold tracking-wider text-orange-400"
+                      >
+                        {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+                      </motion.div>
+                    </div>
+                  </div>
                 </div>
               ) : currentQuestion &&
                 (currentState === "question_shown" ||
@@ -3486,7 +3926,7 @@ export default function ManageCompetitionPage() {
                                   setIsCurrentMediaReady(true);
                                   if (!isTimerActive && currentState === "options_shown") {
                                     // For media round, start only after load
-                                    startTimer(roundType === "media" ? 15 : 60);
+                                    startTimer(getTimerDuration(roundType));
                                     playTimerAudio(); // Play timer sound
                                   }
                                 }}
@@ -3513,7 +3953,7 @@ export default function ManageCompetitionPage() {
                                     if (timeLeft > 0) {
                                       startTimer();
                                     } else {
-                                      startTimer(15);
+                                      startTimer(getTimerDuration("media"));
                                     }
                                     playTimerAudio();
                                   }
@@ -3548,7 +3988,7 @@ export default function ManageCompetitionPage() {
                                     if (timeLeft > 0) {
                                       startTimer();
                                     } else {
-                                      startTimer(15);
+                                      startTimer(getTimerDuration("media"));
                                     }
                                     playTimerAudio();
                                   }
@@ -3600,15 +4040,98 @@ export default function ManageCompetitionPage() {
                       </div>
                     )}
 
+                  {/* Sequence Round Options in Presentation */}
+                  {roundType === "sequence" &&
+                    currentQuestion?.options &&
+                    currentState === "options_shown" &&
+                    !showSequenceModal && (
+                      <div className="w-full space-y-6">
+                        <div className="text-center mb-6">
+                          <div className="bg-purple-500 bg-opacity-20 border-2 border-purple-400 rounded-xl p-6 inline-block">
+                            <h3 className="text-3xl font-bold text-purple-300 mb-2">
+                              🔢 Select Options in Correct Sequence
+                            </h3>
+                            <p className="text-2xl text-purple-200">
+                              Click options in order: {" "}
+                              <span className="font-mono font-bold text-yellow-300">
+                                {sequenceAnswers
+                                  .map((i) => String.fromCharCode(65 + i))
+                                  .join(" → ") || "(None selected)"}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-6">
+                          {currentQuestion.options.map((option, index) => (
+                            <div
+                              key={index}
+                              onClick={() => handleSequenceSubmit(index)}
+                              className={`border-4 rounded-xl p-8 cursor-pointer transition-all text-4xl font-bold relative ${
+                                sequenceAnswers.includes(index)
+                                  ? "bg-purple-600 border-purple-400 text-white shadow-lg scale-105"
+                                  : "border-purple-400 border-opacity-60 hover:border-purple-300 hover:bg-purple-900 hover:bg-opacity-30 bg-gray-800 bg-opacity-90 text-white"
+                              }`}
+                            >
+                              {sequenceAnswers.includes(index) && (
+                                <div className="absolute top-4 right-4 bg-yellow-400 text-purple-900 rounded-full w-12 h-12 flex items-center justify-center text-2xl font-extrabold shadow-lg">
+                                  {sequenceAnswers.indexOf(index) + 1}
+                                </div>
+                              )}
+                              <span className={`quiz-font w-full flex items-center ${isRTL(option) ? 'flex-row-reverse text-right' : ''}`}>
+                                <span dir="ltr" className="font-bold text-4xl mx-4">{String.fromCharCode(65 + index)}.</span>
+                                <span dir={isRTL(option) ? 'rtl' : 'ltr'} style={{ unicodeBidi: 'isolate' }} className="quiz-font text-4xl flex-1">{option}</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {sequenceAnswers.length > 0 && (
+                          <div className="flex justify-center space-x-4 mt-6">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                clearSequenceAnswers();
+                              }}
+                              className="bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-8 rounded-xl text-2xl transition-colors border-2 border-red-400"
+                            >
+                              Clear Sequence
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                initializeSequenceComparison();
+                              }}
+                              className="bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-8 rounded-xl text-2xl transition-colors border-2 border-green-400"
+                            >
+                              Compare Sequence (Press A)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   {/* Buzzer Round Team Selection in Presentation */}
                   {roundType === "buzzer" &&
                     currentState === "options_shown" && (
                       <div className="mt-8 space-y-6">
+                        {isBonusRound && (
+                          <div className="bg-gradient-to-r from-yellow-500 to-orange-500 text-white p-4 rounded-xl text-center mb-4 border-2 border-yellow-300 shadow-xl">
+                            <h3 className="text-3xl font-bold mb-2">🎁 BONUS ROUND 🎁</h3>
+                            <p className="text-xl">Select from remaining teams - No negative marking!</p>
+                          </div>
+                        )}
                         <div className="grid grid-cols-3 gap-6">
                           {(tieBreakerMode
                             ? currentGroup?.teams?.filter((team) => activeTieTeamIds.includes(team._id))
                             : currentGroup?.teams
-                          )?.map((team) => (
+                          )
+                          ?.filter((team) => {
+                            // In bonus round, exclude the team that failed first attempt
+                            if (isBonusRound && bonusRoundExcludedTeam) {
+                              return team._id !== bonusRoundExcludedTeam;
+                            }
+                            return true;
+                          })
+                          ?.map((team) => (
                             <div
                               key={team._id}
                               onClick={() => setSelectedTeam(team._id)}
@@ -3693,49 +4216,124 @@ export default function ManageCompetitionPage() {
                       </div>
                     )}
 
-                  {/* Sequence Round in Presentation */}
+                  {/* Sequence Round Comparison Modal in Presentation */}
                   {roundType === "sequence" && showSequenceModal && (
-                    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[70]">
-                      <div className="bg-white rounded-lg p-8 max-w-4xl w-full mx-4 text-black">
-                        <h2 className="text-3xl font-bold mb-6 text-center">
-                          Sequence Round
+                    <div className="fixed inset-0 bg-black bg-opacity-95 flex items-center justify-center z-[70]">
+                      <div className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl p-10 max-w-6xl w-full mx-4 text-white shadow-2xl border-4 border-purple-400">
+                        <h2 className="text-5xl font-extrabold mb-8 text-center text-yellow-300">
+                          🔢 Sequence Comparison
                         </h2>
-                        <div className="text-2xl font-bold mb-4 text-center">
+                        
+                        <div className="text-3xl font-bold mb-8 text-center text-purple-200 quiz-font">
                           {currentQuestion?.question}
                         </div>
                         
-                        {(currentQuestion as any)?.sequenceSteps && (
-                          <div className="grid grid-cols-2 gap-4 mb-6">
-                            {(currentQuestion as any).sequenceSteps.map((step: string, index: number) => (
-                              <div
-                                key={index}
-                                className={`border-2 rounded-lg p-4 text-center transition-all ${
-                                  index < sequenceRevealStep
-                                    ? "bg-blue-100 border-blue-400"
-                                    : "bg-gray-100 border-gray-300"
-                                }`}
-                              >
-                                <div className="font-bold text-lg mb-2">
-                                  Step {index + 1}
+                        <div className="grid grid-cols-2 gap-8 mb-8">
+                          {/* Correct Sequence Column */}
+                          <div className="bg-green-900 bg-opacity-40 rounded-xl p-6 border-2 border-green-400">
+                            <h3 className="text-3xl font-bold mb-4 text-green-300 text-center">
+                              ✓ Correct Sequence
+                            </h3>
+                            <div className="space-y-3">
+                              {sequenceComparison.correct.map((optionIndex: number, step: number) => (
+                                <div
+                                  key={step}
+                                  className={`border-2 rounded-lg p-4 text-center transition-all duration-500 ${
+                                    step < sequenceRevealStep
+                                      ? "bg-green-600 border-green-400 opacity-100"
+                                      : "bg-gray-700 border-gray-500 opacity-30"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-2xl text-yellow-300">
+                                      {step + 1}.
+                                    </span>
+                                    {step < sequenceRevealStep ? (
+                                      <span className="text-2xl font-bold quiz-font">
+                                        {String.fromCharCode(65 + optionIndex)}. {currentQuestion?.options?.[optionIndex]}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xl text-gray-400">???</span>
+                                    )}
+                                  </div>
                                 </div>
-                                {index < sequenceRevealStep ? (
-                                  <div className="text-lg">{step}</div>
-                                ) : (
-                                  <div className="text-gray-400">Hidden</div>
-                                )}
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        )}
 
-                        <div className="text-center">
-                          <p className="text-lg text-gray-600 mb-4">
-                            Press A to reveal next step or show answer
-                          </p>
-                          {sequenceRevealStep >= ((currentQuestion as any)?.sequenceSteps?.length || 0) && (
-                            <div className="bg-green-100 border border-green-400 rounded-lg p-4">
-                              <h3 className="font-bold text-xl mb-2">Answer:</h3>
-                              <p className="text-xl">{(currentQuestion as any)?.answer}</p>
+                          {/* Selected Sequence Column */}
+                          <div className="bg-blue-900 bg-opacity-40 rounded-xl p-6 border-2 border-blue-400">
+                            <h3 className="text-3xl font-bold mb-4 text-blue-300 text-center">
+                              📝 Team's Answer
+                            </h3>
+                            <div className="space-y-3">
+                              {sequenceComparison.selected.map((optionIndex: number, step: number) => {
+                                const isCorrect = step < sequenceRevealStep && 
+                                  sequenceComparison.correct[step] === optionIndex;
+                                const isRevealed = step < sequenceRevealStep;
+                                
+                                return (
+                                  <div
+                                    key={step}
+                                    className={`border-2 rounded-lg p-4 text-center transition-all duration-500 ${
+                                      isRevealed
+                                        ? isCorrect
+                                          ? "bg-green-600 border-green-400"
+                                          : "bg-red-600 border-red-400"
+                                        : "bg-gray-700 border-gray-500 opacity-30"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-2xl text-yellow-300">
+                                        {step + 1}.
+                                      </span>
+                                      {isRevealed ? (
+                                        <>
+                                          <span className="text-2xl font-bold quiz-font">
+                                            {String.fromCharCode(65 + optionIndex)}. {currentQuestion?.options?.[optionIndex]}
+                                          </span>
+                                          <span className="text-3xl">
+                                            {isCorrect ? "✓" : "✗"}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-xl text-gray-400">???</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-center space-y-4">
+                          {sequenceRevealStep < Math.max(sequenceComparison.correct.length, sequenceComparison.selected.length) ? (
+                            <p className="text-2xl text-yellow-300 font-bold animate-pulse">
+                              Press A to reveal next step ({sequenceRevealStep + 1}/{Math.max(sequenceComparison.correct.length, sequenceComparison.selected.length)})
+                            </p>
+                          ) : (
+                            <div className="bg-yellow-500 bg-opacity-20 border-2 border-yellow-400 rounded-xl p-6">
+                              <p className="text-3xl font-bold text-yellow-300 mb-2">
+                                All Steps Revealed!
+                              </p>
+                              <p className="text-xl text-gray-300">
+                                Press A to close and show answer
+                              </p>
+                            </div>
+                          )}
+                          
+                          {/* Score Summary */}
+                          {sequenceRevealStep > 0 && (
+                            <div className="bg-white bg-opacity-10 rounded-xl p-4 inline-block">
+                              <p className="text-xl">
+                                <span className="text-green-400 font-bold">
+                                  {sequenceComparison.correct.slice(0, sequenceRevealStep).filter((v: number, i: number) => v === sequenceComparison.selected[i]).length}
+                                </span>
+                                {" / "}
+                                <span className="text-gray-300">{sequenceRevealStep}</span>
+                                {" correct so far"}
+                              </p>
                             </div>
                           )}
                         </div>
@@ -3747,21 +4345,47 @@ export default function ManageCompetitionPage() {
                   {currentState === "answer_shown" && currentQuestion && (
                     <div className="bg-green-600 border-4 border-green-400 rounded-xl p-12 text-5xl">
                       <h3 className="font-bold mb-6 quiz-font">Correct Answer:</h3>
-                      <p
-                        className="quiz-font"
-                        dir={isRTL(
-                          typeof currentQuestion.correctAnswer === 'string'
+                      {roundType === "sequence" && Array.isArray(currentQuestion.correctAnswer) ? (
+                        (() => {
+                          const sequenceAnswer = currentQuestion.correctAnswer as number[];
+                          return (
+                            <div className="space-y-4">
+                              <div className="text-3xl font-bold mb-4 text-yellow-300">Correct Sequence:</div>
+                              <div className="flex justify-center items-center space-x-4">
+                                {sequenceAnswer.map((optionIndex: number, step: number) => (
+                                  <div key={step} className="flex items-center">
+                                    <div className="bg-white text-green-600 rounded-xl p-6 font-bold text-4xl min-w-[200px] text-center">
+                                      <div className="text-2xl text-purple-600 mb-2">{step + 1}.</div>
+                                      <div className="quiz-font">
+                                        {String.fromCharCode(65 + optionIndex)}. {currentQuestion.options?.[optionIndex]}
+                                      </div>
+                                    </div>
+                                    {step < sequenceAnswer.length - 1 && (
+                                      <div className="text-yellow-300 text-6xl mx-4">→</div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <p
+                          className="quiz-font"
+                          dir={isRTL(
+                            typeof currentQuestion.correctAnswer === 'string'
+                              ? currentQuestion.correctAnswer
+                              : String(currentQuestion.options?.[currentQuestion.correctAnswer as number] || '')
+                          ) ? 'rtl' : 'ltr'}
+                          style={{ unicodeBidi: 'isolate' }}
+                        >
+                          {typeof currentQuestion.correctAnswer === "string"
                             ? currentQuestion.correctAnswer
-                            : String(currentQuestion.options?.[currentQuestion.correctAnswer as number] || '')
-                        ) ? 'rtl' : 'ltr'}
-                        style={{ unicodeBidi: 'isolate' }}
-                      >
-                        {typeof currentQuestion.correctAnswer === "string"
-                          ? currentQuestion.correctAnswer
-                          : currentQuestion.options?.[
-                              currentQuestion.correctAnswer as number
-                            ]}
-                      </p>
+                            : currentQuestion.options?.[
+                                currentQuestion.correctAnswer as number
+                              ]}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3783,11 +4407,35 @@ export default function ManageCompetitionPage() {
                     ? currentGroup.teams?.filter((team) => activeTieTeamIds.includes(team._id))
                     : currentGroup.teams
                   )?.map((team) => (
-                    <div key={team._id} data-team-id={team._id} className="text-center bg-gradient-to-br from-indigo-600/90 via-purple-600/90 to-blue-600/90 rounded-xl p-6 backdrop-blur-sm border-2 border-yellow-300/50 shadow-xl">
-                      <h3 className="text-4xl font-bold mb-4 text-white">{team.name}</h3>
-                      <p className="text-6xl font-mono font-bold mb-4 text-yellow-300">
+                    <div 
+                      key={team._id} 
+                      data-team-id={team._id} 
+                      onClick={() => {
+                        if ((roundType === "mcq" || roundType === "sequence") && currentState !== "idle") {
+                          setSelectedTeam(team._id);
+                        }
+                      }}
+                      className={`relative text-center bg-gradient-to-br from-indigo-600/90 via-purple-600/90 to-blue-600/90 rounded-xl p-6 backdrop-blur-sm border-2 shadow-xl transition-all ${
+                        (roundType === "mcq" || roundType === "sequence") && currentState !== "idle"
+                          ? "cursor-pointer hover:scale-105 hover:border-yellow-300"
+                          : ""
+                      } ${
+                        selectedTeam === team._id
+                          ? "border-green-400 ring-4 ring-green-400/50 scale-105"
+                          : "border-yellow-300/50"
+                      }`}
+                    >
+                      {selectedTeam === team._id && (
+                        <div className="absolute top-2 right-2 bg-green-400 text-black rounded-full px-3 py-1 text-sm font-bold shadow-lg">
+                          SELECTED ✓
+                        </div>
+                      )}
+                      <h3 className="text-4xl font-bold mb-2 text-white">{team.name}</h3>
+                      <p className="text-sm text-indigo-200 mb-3">{team.school?.name || ""}</p>
+                      <p className="text-6xl font-mono font-bold mb-2 text-yellow-300">
                         {teamScores[team._id] || 0}
                       </p>
+                      <p className="text-xl text-white/80">points</p>
                       {/* Quick scoring buttons in presentation */}
                       <div className="flex gap-2">
                         <Button
@@ -4066,6 +4714,12 @@ export default function ManageCompetitionPage() {
       </audio>
       <audio ref={wrongAnswerAudioRef} preload="auto">
         <source src="/wrong_answer.mp3" type="audio/mpeg" />
+      </audio>
+      <audio ref={questionRevealAudioRef} preload="auto">
+        <source src="/question_reveal.mp3" type="audio/mpeg" />
+      </audio>
+      <audio ref={questionStartAudioRef} preload="auto">
+        <source src="/question_start.mp3" type="audio/mpeg" />
       </audio>
 
       {/* Floating Points Animation CSS */}

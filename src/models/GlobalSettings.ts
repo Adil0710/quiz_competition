@@ -12,6 +12,12 @@ export interface IGlobalSettings extends mongoose.Document {
   rapidFireNegativeMarking: boolean;
   sequenceNegativeMarking: boolean;
   visualRapidFireNegativeMarking: boolean;
+  mcqTimer: number;
+  mediaTimer: number;
+  buzzerTimer: number;
+  rapidFireTimer: number;
+  sequenceTimer: number;
+  visualRapidFireTimer: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,6 +77,36 @@ const GlobalSettingsSchema = new mongoose.Schema<IGlobalSettings>({
     type: Boolean,
     required: true,
     default: false
+  },
+  mcqTimer: {
+    type: Number,
+    required: true,
+    default: 10
+  },
+  mediaTimer: {
+    type: Number,
+    required: true,
+    default: 10
+  },
+  buzzerTimer: {
+    type: Number,
+    required: true,
+    default: 10
+  },
+  rapidFireTimer: {
+    type: Number,
+    required: true,
+    default: 60
+  },
+  sequenceTimer: {
+    type: Number,
+    required: true,
+    default: 20
+  },
+  visualRapidFireTimer: {
+    type: Number,
+    required: true,
+    default: 60
   }
 }, {
   timestamps: true

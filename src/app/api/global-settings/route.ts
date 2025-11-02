@@ -20,11 +20,17 @@ export async function GET() {
         mediaNegativeMarking: false,
         rapidFireNegativeMarking: false,
         sequenceNegativeMarking: false,
-        visualRapidFireNegativeMarking: false
+        visualRapidFireNegativeMarking: false,
+        mcqTimer: 10,
+        mediaTimer: 10,
+        buzzerTimer: 10,
+        rapidFireTimer: 60,
+        sequenceTimer: 20,
+        visualRapidFireTimer: 60
       });
     } else {
-      // Migration: Check if new negative marking fields don't exist
-      if (settings.mcqNegativeMarking === undefined) {
+      // Migration: Check if new fields don't exist
+      if (settings.mcqNegativeMarking === undefined || settings.mcqTimer === undefined) {
         // Update existing document to add new fields
         settings = await GlobalSettings.findOneAndUpdate(
           { _id: settings._id },
@@ -34,7 +40,13 @@ export async function GET() {
               mediaNegativeMarking: false,
               rapidFireNegativeMarking: false,
               sequenceNegativeMarking: false,
-              visualRapidFireNegativeMarking: false
+              visualRapidFireNegativeMarking: false,
+              mcqTimer: 10,
+              mediaTimer: 10,
+              buzzerTimer: 10,
+              rapidFireTimer: 60,
+              sequenceTimer: 20,
+              visualRapidFireTimer: 60
             },
             $unset: {
               negativeMarking: ""
@@ -74,7 +86,13 @@ export async function POST(request: NextRequest) {
       mediaNegativeMarking,
       rapidFireNegativeMarking,
       sequenceNegativeMarking,
-      visualRapidFireNegativeMarking
+      visualRapidFireNegativeMarking,
+      mcqTimer,
+      mediaTimer,
+      buzzerTimer,
+      rapidFireTimer,
+      sequenceTimer,
+      visualRapidFireTimer
     } = body;
 
     // Update or create settings (upsert)
@@ -91,7 +109,13 @@ export async function POST(request: NextRequest) {
         mediaNegativeMarking,
         rapidFireNegativeMarking,
         sequenceNegativeMarking,
-        visualRapidFireNegativeMarking
+        visualRapidFireNegativeMarking,
+        mcqTimer,
+        mediaTimer,
+        buzzerTimer,
+        rapidFireTimer,
+        sequenceTimer,
+        visualRapidFireTimer
       },
       { 
         upsert: true, // Create if doesn't exist

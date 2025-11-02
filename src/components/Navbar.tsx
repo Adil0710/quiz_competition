@@ -48,7 +48,14 @@ export default function Navbar() {
     mediaNegativeMarking: false,
     rapidFireNegativeMarking: false,
     sequenceNegativeMarking: false,
-    visualRapidFireNegativeMarking: false
+    visualRapidFireNegativeMarking: false,
+    // Timer durations in seconds
+    mcqTimer: 10,
+    mediaTimer: 10,
+    buzzerTimer: 10,
+    rapidFireTimer: 60,
+    sequenceTimer: 20,
+    visualRapidFireTimer: 60
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -176,8 +183,9 @@ export default function Navbar() {
                 <DialogTitle>Settings</DialogTitle>
               </DialogHeader>
               <Tabs defaultValue="questions" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="questions">Question Settings</TabsTrigger>
+                  <TabsTrigger value="timers">Timer Settings</TabsTrigger>
                   <TabsTrigger value="fonts">Font Settings</TabsTrigger>
                 </TabsList>
                 
@@ -291,6 +299,98 @@ export default function Navbar() {
                           <Label htmlFor="visualRapidFireNegativeMarking" className="text-sm">Negative Marking</Label>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="timers" className="space-y-6 mt-6">
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-semibold">Timer Duration Configuration (in seconds)</h4>
+                    <p className="text-sm text-muted-foreground">Set the timer duration for each question type during the competition.</p>
+                    <div className="grid gap-4">
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="mcqTimer" className="text-sm font-medium">MCQ Timer (seconds)</Label>
+                        <Input
+                          id="mcqTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.mcqTimer}
+                          onChange={(e) => handleSettingsChange('mcqTimer', parseInt(e.target.value) || 10)}
+                          className="col-span-1"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="mediaTimer" className="text-sm font-medium">Media Timer (seconds)</Label>
+                        <Input
+                          id="mediaTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.mediaTimer}
+                          onChange={(e) => handleSettingsChange('mediaTimer', parseInt(e.target.value) || 10)}
+                          className="col-span-1"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="buzzerTimer" className="text-sm font-medium">Buzzer Timer (seconds)</Label>
+                        <Input
+                          id="buzzerTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.buzzerTimer}
+                          onChange={(e) => handleSettingsChange('buzzerTimer', parseInt(e.target.value) || 10)}
+                          className="col-span-1"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="sequenceTimer" className="text-sm font-medium">Sequence Timer (seconds)</Label>
+                        <Input
+                          id="sequenceTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.sequenceTimer}
+                          onChange={(e) => handleSettingsChange('sequenceTimer', parseInt(e.target.value) || 20)}
+                          className="col-span-1"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="rapidFireTimer" className="text-sm font-medium">Rapid Fire Timer (seconds)</Label>
+                        <Input
+                          id="rapidFireTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.rapidFireTimer}
+                          onChange={(e) => handleSettingsChange('rapidFireTimer', parseInt(e.target.value) || 60)}
+                          className="col-span-1"
+                        />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 items-center gap-4">
+                        <Label htmlFor="visualRapidFireTimer" className="text-sm font-medium">Visual Rapid Fire Timer (seconds)</Label>
+                        <Input
+                          id="visualRapidFireTimer"
+                          type="number"
+                          min="1"
+                          max="300"
+                          value={globalSettings.visualRapidFireTimer}
+                          onChange={(e) => handleSettingsChange('visualRapidFireTimer', parseInt(e.target.value) || 60)}
+                          className="col-span-1"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                      <p className="text-sm text-blue-800">
+                        <strong>Note:</strong> These timer settings will apply to all new competitions. Changes take effect immediately.
+                      </p>
                     </div>
                   </div>
                 </TabsContent>

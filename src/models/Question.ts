@@ -11,7 +11,7 @@ export interface IQuestion extends Document {
   difficulty: 'easy' | 'medium' | 'hard';
   category: string;
   points: number;
-  phase: 'league' | 'semi_final' | 'final';
+  phase: 'league' | 'semi_final' | 'final' | 'tie_breaker';
   isUsed: boolean;
   usedInCompetitions: mongoose.Types.ObjectId[];
   createdAt: Date;
@@ -68,7 +68,7 @@ const QuestionSchema: Schema = new Schema({
   },
   phase: {
     type: String,
-    enum: ['league', 'semi_final', 'final'],
+    enum: ['league', 'semi_final', 'final', 'tie_breaker'],
     required: [true, 'Phase is required']
   },
   isUsed: {

@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2, Check } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Upload, Play, Volume2, Image, Loader2, Check, RefreshCw } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface Question {
@@ -29,7 +29,7 @@ interface Question {
   points: number;
   isUsed: boolean;
   createdAt: string;
-  phase: 'league' | 'semi_final' | 'final';
+  phase: 'league' | 'semi_final' | 'final' | 'tie_breaker';
 }
 
 export default function QuestionsPage() {
@@ -58,13 +58,15 @@ export default function QuestionsPage() {
     difficulty: 'medium' as 'easy' | 'medium' | 'hard',
     category: '',
     points: 1,
-    phase: 'league' as 'league'|'semi_final'|'final'
+    phase: 'league' as 'league'|'semi_final'|'final'|'tie_breaker'
   });
   const [vrfFiles, setVrfFiles] = useState<FileList | null>(null);
   const [vrfUploading, setVrfUploading] = useState(false);
   const [vrfImageUrls, setVrfImageUrls] = useState<string[]>([]);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const { toast } = useToast();
 
   // Detect if text contains RTL scripts (Arabic, Urdu, Hebrew, etc.)
@@ -307,6 +309,43 @@ export default function QuestionsPage() {
     }
   };
 
+  const handleResetUsage = async () => {
+    setResetting(true);
+    try {
+      const response = await fetch('/api/questions/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          type: filterType !== 'all' ? filterType : undefined,
+          phase: filterPhase !== 'all' ? filterPhase : undefined,
+          global: false // Standard reset
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Questions Reset",
+          description: `${data.resetCount} question(s) have been reset and are now available again.`,
+        });
+        setShowResetDialog(false);
+        fetchQuestions(); // Refresh to show updated isUsed status
+      } else {
+        throw new Error(data.error || 'Failed to reset questions');
+      }
+    } catch (error) {
+      console.error('Error resetting questions:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to reset questions",
+        variant: "destructive",
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'mcq': return '📝';
@@ -415,6 +454,7 @@ export default function QuestionsPage() {
                         <SelectItem value="league">League</SelectItem>
                         <SelectItem value="semi_final">Semi-Final</SelectItem>
                         <SelectItem value="final">Final</SelectItem>
+                        <SelectItem value="tie_breaker">Tie-breaker</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -913,10 +953,19 @@ export default function QuestionsPage() {
                   <SelectItem value="league">League Only</SelectItem>
                   <SelectItem value="semi_final">Semi Final Only</SelectItem>
                   <SelectItem value="final">Final Only</SelectItem>
+                  <SelectItem value="tie_breaker">Tie-breaker Only</SelectItem>
                 </SelectContent>
               </Select>
             )}
             
+            <Button 
+              variant="outline" 
+              onClick={() => setShowResetDialog(true)}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Reset Used Questions
+            </Button>
+
             {filterType !== 'all' && (
               <Button 
                 variant="destructive" 
@@ -1034,7 +1083,8 @@ export default function QuestionsPage() {
                     <TableCell>
                       <Badge variant="secondary">
                         {question.phase === 'league' ? 'League' : 
-                         question.phase === 'semi_final' ? 'Semi Final' : 'Final'}
+                         question.phase === 'semi_final' ? 'Semi Final' : 
+                         question.phase === 'final' ? 'Final' : 'Tie-breaker'}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -1111,6 +1161,50 @@ export default function QuestionsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reset Questions Dialog */}
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reset Used Questions</DialogTitle>
+            <DialogDescription>
+              Mark questions as unused so they can be selected again in competitions.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">What will be reset?</h4>
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li><strong>Type:</strong> {filterType !== 'all' ? filterType.replace('_', ' ').toUpperCase() : 'All Types'}</li>
+                <li><strong>Phase:</strong> {filterPhase !== 'all' ? filterPhase.replace('_', ' ') : 'All Phases'}</li>
+              </ul>
+            </div>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800">
+                <strong>Note:</strong> This only resets the global "used" flag. Per-competition tracking remains intact to avoid repeating questions within the same competition.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetDialog(false)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button onClick={handleResetUsage} disabled={resetting} className="bg-blue-600 hover:bg-blue-700">
+              {resetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Reset Questions
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
